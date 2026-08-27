@@ -50,7 +50,7 @@ export function ScopedErrorBoundary({
                 onRetry?.()
                 resetError()
               }}
-              className="inline-flex min-h-8 items-center rounded-xl px-2 text-body-sm font-medium text-primary transition-colors hover:bg-surface-container-high hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="inline-flex min-h-8 items-center rounded-xl px-2 text-body-sm font-medium text-primary transition-colors hover:bg-state-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Try again
             </button>
@@ -58,7 +58,7 @@ export function ScopedErrorBoundary({
               <button
                 type="button"
                 onClick={onDismiss}
-                className="inline-flex min-h-8 items-center rounded-xl px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="inline-flex min-h-8 items-center rounded-xl px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 {dismissLabel}
               </button>

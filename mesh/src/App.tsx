@@ -323,7 +323,7 @@ function CommunityLoadBanner({
   return (
     <div
       role="status"
-      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
     >
       <span>
         Mesh could not open {label} safely. {blockedCommunityGuidance(notice.reasons)}
@@ -357,7 +357,7 @@ function RoomLoadBanner({
     // the direction check-design-tokens.mjs is pushing every caller.
     <div
       role="status"
-      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
     >
       <span>
         Mesh could not open {label} safely. {blockedRoomGuidance(notice.reasons)}

@@ -134,7 +134,7 @@ export function VoicePeerGrid({
         aria-label={`${channelName} call`}
       >
         {reconnecting ? (
-          <div className="mb-3 flex flex-none items-center gap-2 border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-marker" role="status">
+          <div className="mb-3 flex flex-none items-center gap-2 border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container" role="status">
             <Icon name="refresh" size="sm" aria-hidden="true" />
             <span>
               <strong>Reconnecting to {channelName}.</strong>
@@ -477,7 +477,7 @@ function PartyRoster({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+            className="flex h-9 w-9 items-center justify-center text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
             aria-label="Close people list"
           >
             <Icon name="x" size="sm" />

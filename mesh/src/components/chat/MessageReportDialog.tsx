@@ -102,7 +102,7 @@ function MessageReportDialogContent({
         </label>
         <p className="text-label-sm text-on-surface-variant">{reason.length}/500 characters</p>
         {error && (
-          <p role="alert" className="rounded-full bg-error-container px-3 py-2 text-body-sm text-error">
+          <p role="alert" className="rounded-full bg-error-container px-3 py-2 text-body-sm text-on-error-container">
             {error}
           </p>
         )}

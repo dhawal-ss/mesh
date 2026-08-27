@@ -100,7 +100,6 @@ describe('ChannelItem notification context menu', () => {
     act(() => {
       root.render(
         <ChannelItem
-          index={0}
           channel={{ ...channel, ...overrides }}
           matrixMode={matrixMode}
           active={false}
@@ -120,13 +119,14 @@ describe('ChannelItem notification context menu', () => {
 
     expect(button.getAttribute('aria-label')).toBe('Text room: general, 4 unread')
     /*
-      The pill badge is gone. An unread count is a zero-padded mono numeral at
-      the accent ink, right-aligned, so a column of rooms reads as a column of
-      numbers rather than a scatter of lozenges at different widths.
+      The pill badge is back, as the Material 3 large badge. The zero-padded
+      mono numeral it replaced belonged to a row whose leading gutter was also
+      a numeral; with that gutter gone, a bare count beside a room name reads
+      as part of the name.
     */
-    expect(button.textContent).toContain('04')
-    expect(container.querySelector('.text-primary')).toBeTruthy()
-    expect(container.querySelector('.bg-primary')).toBeNull()
+    expect(button.textContent).toContain('4')
+    expect(container.querySelector('.bg-surface-container-highest')).toBeTruthy()
+    expect(container.querySelector('.bg-secondary-container')).toBeNull()
     act(() => button.click())
     expect(onClick).toHaveBeenCalledOnce()
   })
@@ -141,7 +141,6 @@ describe('ChannelItem notification context menu', () => {
     act(() => {
       root.render(
         <ChannelItem
-          index={0}
           channel={{ ...channel, unreadCount: 0 }}
           active={false}
           onClick={onClick}
@@ -324,7 +323,6 @@ describe('ChannelItem room management', () => {
     act(() => {
       root.render(
         <ChannelItem
-          index={0}
           channel={channel}
           matrixMode
           active={false}
@@ -405,7 +403,6 @@ describe('ChannelItem for a room this account has not joined', () => {
       root.render(
         <ChannelItem
           channel={unjoined}
-          index={0}
           matrixMode
           active={false}
           onClick={props.onClick ?? vi.fn()}
@@ -460,7 +457,6 @@ describe('ChannelItem for a room this account has not joined', () => {
       root.render(
         <ChannelItem
           channel={channel}
-          index={0}
           matrixMode
           active={false}
           onClick={vi.fn()}
@@ -503,7 +499,6 @@ describe('ChannelItem draft marker', () => {
       root.render(
         <ChannelItem
           channel={{ ...channel, ...overrides }}
-          index={0}
           matrixMode
           active={active}
           onClick={vi.fn()}

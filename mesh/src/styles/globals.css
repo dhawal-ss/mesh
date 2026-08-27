@@ -195,6 +195,16 @@
   --ref-accent-rose-10-rgb: 124 232 241;
   --ref-accent-rose-8: #22909B;
   --ref-accent-rose-8-rgb: 34 144 155;
+  /*
+    Container steps for the dark accents. The `-8` mid-tones cannot carry their
+    own `-10` ink -- violet measured 2.59:1 and rose 2.65:1 -- so a tonal
+    container under a selected accent uses a genuine dark step. Four of the six
+    already had one on their light ramp; violet and rose did not.
+  */
+  --ref-accent-violet-3: #5C0B48;
+  --ref-accent-violet-3-rgb: 92 11 72;
+  --ref-accent-rose-3: #08383C;
+  --ref-accent-rose-3-rgb: 8 56 60;
   --ref-accent-sand-light-9: #7A5A00;
   --ref-accent-sand-light-9-rgb: 122 90 0;
   --ref-accent-sand-light-10: #FFEFC2;
@@ -346,6 +356,14 @@
    * the state-layer opacities in the @supports block below;
    * check-container-contrast.mjs recomputes the boundaries from this file.
    */
+  /*
+    A solid role fill needs a hover face in its own family. Reaching for the
+    container's hover face instead put --on-primary on --primary-container and
+    measured 2.09:1 on the one filled button onboarding shows first.
+  */
+  --primary-hover: var(--primary);
+  --error-hover: var(--error);
+  --marker-hover: var(--marker);
   --primary-container-hover: var(--ref-azure-40-layer);
   --primary-container-active: var(--ref-azure-40-layer);
   --primary-container-line: rgb(var(--primary-rgb) / 0.78);
@@ -638,6 +656,34 @@
   }
 }
 
+/*
+ * A hover face is the role with its own foreground laid over it at the
+ * state-layer opacity. The base block carries composited fallbacks for the
+ * three azure ones; everything else -- the six selectable accents above all --
+ * is derived here, because a block that re-points --primary cannot also know
+ * the eight composited values that follow from it.
+ *
+ * check-container-contrast measures the dark, light and high-contrast themes,
+ * and each of those declares both branches; an accent block declares only this
+ * one, which is why these are not in that gate's branch-agreement check.
+ */
+@supports (color: color-mix(in oklch, white, black)) {
+  :root,
+  [data-accent] {
+    --primary-hover: color-mix(in oklch, var(--primary) 92%, var(--on-primary));
+    --error-hover: color-mix(in oklch, var(--error) 92%, var(--on-error));
+    --marker-hover: color-mix(in oklch, var(--marker) 92%, var(--on-marker));
+    --primary-container-hover: color-mix(in oklch, var(--primary-container) 92%, var(--on-primary-container));
+    --primary-container-active: color-mix(in oklch, var(--primary-container) 90%, var(--on-primary-container));
+    --secondary-container-hover: color-mix(in oklch, var(--secondary-container) 92%, var(--on-secondary-container));
+    --secondary-container-active: color-mix(in oklch, var(--secondary-container) 90%, var(--on-secondary-container));
+    --error-container-hover: color-mix(in oklch, var(--error-container) 92%, var(--on-error-container));
+    --error-container-active: color-mix(in oklch, var(--error-container) 90%, var(--on-error-container));
+    --marker-container-hover: color-mix(in oklch, var(--marker-container) 92%, var(--on-marker-container));
+    --marker-container-active: color-mix(in oklch, var(--marker-container) 90%, var(--on-marker-container));
+  }
+}
+
 :root[data-theme='dark'],
 [data-theme='dark'] {
   color-scheme: dark;
@@ -854,8 +900,8 @@
   --primary: var(--ref-accent-sand-9);
   --on-primary-rgb: var(--ref-n-0-rgb);
   --on-primary: var(--ref-n-0);
-  --primary-container-rgb: var(--ref-accent-sand-8-rgb);
-  --primary-container: var(--ref-accent-sand-8);
+  --primary-container-rgb: var(--ref-accent-sand-light-9-rgb);
+  --primary-container: var(--ref-accent-sand-light-9);
   --on-primary-container-rgb: var(--ref-accent-sand-10-rgb);
   --on-primary-container: var(--ref-accent-sand-10);
 }
@@ -866,8 +912,8 @@
   --primary: var(--ref-accent-ocean-9);
   --on-primary-rgb: var(--ref-azure-20-rgb);
   --on-primary: var(--ref-azure-20);
-  --primary-container-rgb: var(--ref-accent-ocean-8-rgb);
-  --primary-container: var(--ref-accent-ocean-8);
+  --primary-container-rgb: var(--ref-accent-ocean-light-9-rgb);
+  --primary-container: var(--ref-accent-ocean-light-9);
   --on-primary-container-rgb: var(--ref-accent-ocean-10-rgb);
   --on-primary-container: var(--ref-accent-ocean-10);
 }
@@ -878,8 +924,8 @@
   --primary: var(--ref-accent-violet-9);
   --on-primary-rgb: var(--ref-n-0-rgb);
   --on-primary: var(--ref-n-0);
-  --primary-container-rgb: var(--ref-accent-violet-8-rgb);
-  --primary-container: var(--ref-accent-violet-8);
+  --primary-container-rgb: var(--ref-accent-violet-3-rgb);
+  --primary-container: var(--ref-accent-violet-3);
   --on-primary-container-rgb: var(--ref-accent-violet-10-rgb);
   --on-primary-container: var(--ref-accent-violet-10);
 }
@@ -890,8 +936,8 @@
   --primary: var(--ref-accent-forest-9);
   --on-primary-rgb: var(--ref-n-0-rgb);
   --on-primary: var(--ref-n-0);
-  --primary-container-rgb: var(--ref-accent-forest-8-rgb);
-  --primary-container: var(--ref-accent-forest-8);
+  --primary-container-rgb: var(--ref-accent-forest-light-9-rgb);
+  --primary-container: var(--ref-accent-forest-light-9);
   --on-primary-container-rgb: var(--ref-accent-forest-10-rgb);
   --on-primary-container: var(--ref-accent-forest-10);
 }
@@ -902,8 +948,8 @@
   --primary: var(--ref-accent-ember-9);
   --on-primary-rgb: var(--ref-coral-20-rgb);
   --on-primary: var(--ref-coral-20);
-  --primary-container-rgb: var(--ref-accent-ember-8-rgb);
-  --primary-container: var(--ref-accent-ember-8);
+  --primary-container-rgb: var(--ref-accent-ember-light-9-rgb);
+  --primary-container: var(--ref-accent-ember-light-9);
   --on-primary-container-rgb: var(--ref-accent-ember-10-rgb);
   --on-primary-container: var(--ref-accent-ember-10);
 }
@@ -914,8 +960,8 @@
   --primary: var(--ref-accent-rose-9);
   --on-primary-rgb: var(--ref-n-0-rgb);
   --on-primary: var(--ref-n-0);
-  --primary-container-rgb: var(--ref-accent-rose-8-rgb);
-  --primary-container: var(--ref-accent-rose-8);
+  --primary-container-rgb: var(--ref-accent-rose-3-rgb);
+  --primary-container: var(--ref-accent-rose-3);
   --on-primary-container-rgb: var(--ref-accent-rose-10-rgb);
   --on-primary-container: var(--ref-accent-rose-10);
 }
@@ -1554,16 +1600,42 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   background: var(--surface-container-lowest);
 }
 
+/*
+ * The shell's notice stack is inset with the panes it sits above, so a banner
+ * reads as one more rounded surface in the frame rather than a full-bleed
+ * strip cutting across it.
+ */
+.mesh-shell-notice {
+  margin: var(--shell-pane-gap) var(--shell-pane-gap) 0;
+  border-radius: var(--shape-lg);
+}
+
+/*
+ * Depth is tonal, not linear.
+ *
+ * Every pane is a --shell-pane-radius rounded surface inset by
+ * --shell-pane-gap from the window and from its neighbours, so there is no
+ * shared edge left for a rule to draw and no hairline anywhere in the shell.
+ * The frame behind them is the darkest tone in the ramp; each pane steps up
+ * from it, and the step is what says where one ends and the next begins.
+ */
+.mesh-workspace-frame {
+  gap: var(--shell-pane-gap);
+  padding: var(--shell-pane-gap);
+  background: var(--surface-container-lowest);
+}
+
 .mesh-community-rail,
 .mesh-context-sidebar,
-.mesh-workspace-main {
-  border-radius: 0;
+.mesh-workspace-main,
+.mesh-room-context-panel {
+  border: 0;
+  border-radius: var(--shell-pane-radius);
 }
 
 .mesh-community-rail {
   overflow-x: hidden;
-  border-right: 1px solid var(--outline-variant) !important;
-  background: var(--surface-container-lowest);
+  background: var(--surface);
 }
 
 .mesh-home-row {
@@ -1622,7 +1694,6 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-context-sidebar {
   overflow: hidden;
-  border-right: 1px solid var(--outline-variant) !important;
   background: var(--surface-container-low);
 }
 
@@ -1647,18 +1718,24 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   justify-content: center;
 }
 
-.mesh-rail-slot[data-rail-active='true'] {
-  box-shadow: inset 3px 0 0 var(--primary);
-}
-
-/* Unread without selection: a short stub at the same rail edge, never a dot alone. */
+/*
+ * Selection is the shape change: a community tile is a circle at rest and a
+ * 16px tile when it is the one you are in. The 3px inset bar that used to
+ * paint here as well said the same thing a second time, and it was drawn on a
+ * pane edge this contract no longer has.
+ *
+ * Unread without selection is an M3 small badge on the tile's top-right
+ * corner, ringed in the rail's own ground so it stays legible over the mark.
+ */
 .mesh-rail-unread {
   position: absolute;
-  left: 0;
-  width: 3px;
-  height: 8px;
-  border-radius: 0;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--shape-full);
   background: var(--on-surface);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .mesh-user-panel {
@@ -1714,6 +1791,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-room-context-panel {
   width: var(--mesh-room-context-width, var(--shell-roster-width));
+  background: var(--surface-container);
 }
 
 .mesh-secondary-pane {
@@ -2511,25 +2589,23 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 /*
- * High contrast turns the container fill solid, so a band's body text has to
- * flip to the paired on-container ink. In the tinted themes the band keeps the
- * caller's own text color and the tone stays in the rules.
- */
-[data-theme='high-contrast'] .mesh-notice-band,
-[data-contrast='high'] .mesh-notice-band,
-[data-theme='high-contrast'] [data-notice-tone],
-[data-contrast='high'] [data-notice-tone],
-/*
+ * A tonal container has exactly one legible foreground, in every theme.
+ *
+ * This rule used to be scoped to high contrast, because a Quiet Structure
+ * container was the tone at 14% over near-black and the caller's own colour
+ * survived on it. A Material 3 container is a solid ground: azure on the
+ * amber container measures 3.30:1 and amber on it 4.42:1, which is what the
+ * axe pass caught on five surfaces. So the band and its actions take the
+ * paired ink everywhere now.
+ *
  * An action inside a band sets its own color, and a parent's `color` never
- * overrides a child's own declaration however important it is. A link-toned
- * retry button therefore stayed light blue on the solid fill and measured
- * 1.2:1. Interactive descendants flip with the band unless they carry a tone
- * of their own.
+ * overrides a child's own declaration however important it is, so interactive
+ * descendants are named here rather than left to inherit.
  */
-[data-theme='high-contrast'] [data-notice-tone] :is(a, button):not([data-notice-tone]),
-[data-contrast='high'] [data-notice-tone] :is(a, button):not([data-notice-tone]),
-[data-theme='high-contrast'] .mesh-notice-band :is(a, button):not([data-notice-tone]),
-[data-contrast='high'] .mesh-notice-band :is(a, button):not([data-notice-tone]) {
+.mesh-notice-band,
+[data-notice-tone],
+[data-notice-tone] :is(a, button):not([data-notice-tone]),
+.mesh-notice-band :is(a, button):not([data-notice-tone]) {
   color: var(--notice-content) !important;
 }
 
@@ -2976,15 +3052,11 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   }
 }
 
-@media (min-width: 1101px) and (max-width: 1365px) {
-  /* Keep all four desktop panes available without letting persisted maximum
-     widths consume the conversation at standard laptop widths. */
+@media (min-width: 1101px) and (max-width: 1599px) {
+  /* Keep the list at its contracted width rather than at whatever maximum a
+     person once dragged it to, so the conversation keeps its measure. */
   .mesh-context-sidebar {
     width: min(var(--mesh-context-sidebar-width, var(--shell-list-width)), var(--shell-list-width));
-  }
-
-  .mesh-room-context-panel {
-    width: min(var(--mesh-room-context-width, var(--shell-roster-width)), var(--shell-roster-width));
   }
 
   .mesh-panel-resize-handle {
@@ -2997,13 +3069,26 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   .mesh-member-list {
     display: none;
   }
+}
 
+/*
+ * The roster docks only where four panes fit.
+ *
+ * The rail, the list and the roster are 88, 340 and 400 wide, and with four
+ * 12px gaps that is 876px of chrome: a 1600px window keeps 724px of
+ * conversation, a 1366px one keeps 466px, and the composer needs more than
+ * that. Below 1600 the roster is a side sheet over the conversation rather
+ * than a fourth column of chrome, which is the modal counterpart M3 gives a
+ * docked side sheet when the window is too narrow to dock one.
+ */
+@media (max-width: 1599px) {
   .mesh-room-context-panel,
   .mesh-secondary-pane {
     position: fixed;
-    inset-block: 0;
-    right: 0;
+    inset-block: var(--shell-pane-gap);
+    right: var(--shell-pane-gap);
     z-index: 44;
+    border-radius: var(--shell-pane-radius);
     box-shadow: var(--elev-3);
   }
 
@@ -3027,7 +3112,23 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   }
 }
 
-@media (max-width: 799px) {
+@media (max-width: 999px) {
+  /*
+    The inset frame is a large-window treatment. Below 1000px the list is a
+    drawer over the conversation rather than a column beside it, so a 12px
+    gutter on all four sides is 24px taken off a viewport that has none to
+    spare -- the panes go full-bleed and the gaps close.
+  */
+  .mesh-workspace-frame {
+    gap: 0;
+    padding: 0;
+  }
+
+  .mesh-shell-notice {
+    margin: 0;
+    border-radius: 0;
+  }
+
   .mesh-community-rail,
   .mesh-context-sidebar,
   .mesh-workspace-main {
@@ -3085,6 +3186,19 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 }
 
 @media (max-width: 639px) {
+  /*
+    A phone-width window cannot spend 88px on a navigation rail. The label
+    under each glyph is the first thing to go, and the rail narrows to the
+    target width alone.
+  */
+  :root {
+    --shell-rail-width: 64px;
+  }
+
+  .mesh-rail-action > span:last-child {
+    display: none;
+  }
+
   .mesh-message-media {
     height: auto;
     max-height: none;

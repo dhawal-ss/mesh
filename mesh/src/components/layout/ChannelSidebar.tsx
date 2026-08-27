@@ -402,28 +402,6 @@ export function ChannelSidebar() {
   useEffect(() => {
     resetLayout()
   }, [activeCommunityId, hiddenTrayCollapsed, resetLayout, voiceCollapsed])
-  /*
-    Positional row numbers.
-
-    The number in a row's gutter counts rooms, not entries, so a section header
-    does not consume one and the sequence stays 01, 02, 03 down the column. It
-    is derived from the rendered order every time rather than persisted: the
-    number says where a room is now, and a stored one would start lying the
-    first time somebody pinned something.
-
-    Keyed by room id because the list virtualises -- a visible slice knows its
-    own offset into the entry array, not into the room subsequence.
-  */
-  const roomPositions = useMemo(() => {
-    const positions = new Map<string, number>()
-    let position = 0
-    for (const entry of roomListEntries) {
-      if (entry.kind !== 'room') continue
-      positions.set(entry.channel.id, position)
-      position += 1
-    }
-    return positions
-  }, [roomListEntries])
 
   const navigableRooms = useMemo(
     () => roomListEntries.flatMap((entry) => (
@@ -698,7 +676,7 @@ export function ChannelSidebar() {
           {roomsUnavailable && (
             <div
               role="alert"
-              className="mb-2 rounded-full border border-marker-container-line bg-marker-container px-2 py-2 text-body-sm text-on-surface-variant"
+              className="mb-2 rounded-full border border-marker-container-line bg-marker-container px-2 py-2 text-body-sm text-on-marker-container"
             >
               <p>
                 {activeRefresh?.status === 'stale'
@@ -707,7 +685,7 @@ export function ChannelSidebar() {
               </p>
               <button
                 type="button"
-                className="mt-1 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+                className="mt-1 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
                 onClick={() => activeCommunityId && requestCommunityRefresh(activeCommunityId)}
               >
                 Retry rooms
@@ -774,7 +752,6 @@ export function ChannelSidebar() {
                     <div role="presentation">
                       <ChannelItem
                         channel={channel}
-                        index={roomPositions.get(channel.id) ?? 0}
                         matrixMode={matrixMode}
                         active={channel.id === activeChannelId}
                         onClick={() => {
@@ -884,7 +861,6 @@ export function ChannelSidebar() {
                   >
                     <ChannelItem
                       channel={channel}
-                      index={roomPositions.get(channel.id) ?? 0}
                       matrixMode={matrixMode}
                       active={
                         channel.id === currentChannelId &&
@@ -910,7 +886,7 @@ export function ChannelSidebar() {
                             key={`${member.userId}:${member.deviceId}:${member.sessionId}`}
                             type="button"
                             onClick={joinChannel}
-                            className="flex min-h-6 w-full items-center gap-1.5 rounded-full px-1 py-0.5 text-left text-body-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant"
+                            className="flex min-h-6 w-full items-center gap-1.5 rounded-full px-1 py-0.5 text-left text-body-sm text-on-surface-variant hover:bg-state-hover hover:text-on-surface-variant"
                           >
                             <Avatar
                               color="var(--avatar-violet)"
@@ -978,7 +954,7 @@ export function ChannelSidebar() {
             aria-haspopup="dialog"
             aria-expanded={inviteOpen}
             onClick={() => setInviteOpen(true)}
-            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface"
           >
             <Icon name="userPlus" size="sm" />
             Invite
@@ -986,7 +962,7 @@ export function ChannelSidebar() {
           <button
             type="button"
             onClick={browseRooms}
-            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface"
           >
             <Icon name="search" size="sm" />
             Browse
@@ -994,7 +970,7 @@ export function ChannelSidebar() {
           <button
             type="button"
             onClick={openMembers}
-            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            className="flex min-h-9 items-center justify-center gap-2 rounded-full text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface"
           >
             <Icon name="users" size="sm" />
             Members

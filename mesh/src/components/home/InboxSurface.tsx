@@ -144,7 +144,7 @@ export function InboxSurface() {
         ) : rows.map((row) => (
           <div
             key={row.key}
-            className="mesh-inbox-row flex w-full items-center gap-3 border-b border-outline-variant hover:bg-surface-container-high"
+            className="mesh-inbox-row flex w-full items-center gap-3 border-b border-outline-variant hover:bg-state-hover"
           >
             <button
               type="button"

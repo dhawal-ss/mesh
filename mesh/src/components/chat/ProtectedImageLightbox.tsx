@@ -154,7 +154,7 @@ export function ProtectedImageLightbox({
           )}
           {image.status === 'failed' && (
             <div className="flex flex-col items-center gap-2 px-4 text-center">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-error-container text-error">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-error-container text-on-error-container">
                 <Icon name="triangleAlert" size="sm" />
               </div>
               <p role="alert" className="text-body-md font-medium text-error">
@@ -194,7 +194,7 @@ export function ProtectedImageLightbox({
               onClick={onPrevious}
               disabled={imageCount < 2}
               aria-keyshortcuts={imageCount < 2 ? undefined : 'ArrowLeft'}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
               Previous image
             </button>
@@ -206,7 +206,7 @@ export function ProtectedImageLightbox({
               onClick={onNext}
               disabled={imageCount < 2}
               aria-keyshortcuts={imageCount < 2 ? undefined : 'ArrowRight'}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
               Next image
             </button>
@@ -216,7 +216,7 @@ export function ProtectedImageLightbox({
               type="button"
               onClick={() => setZoom((current) => Math.max(MIN_ZOOM, current - ZOOM_STEP))}
               disabled={zoom <= MIN_ZOOM}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
               Zoom out
             </button>
@@ -224,42 +224,42 @@ export function ProtectedImageLightbox({
               type="button"
               onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + ZOOM_STEP))}
               disabled={zoom >= MAX_ZOOM}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
               Zoom in
             </button>
             <button
               type="button"
               onClick={() => pan(-PAN_STEP, 0)}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Pan left
             </button>
             <button
               type="button"
               onClick={() => pan(PAN_STEP, 0)}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Pan right
             </button>
             <button
               type="button"
               onClick={() => pan(0, -PAN_STEP)}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Pan up
             </button>
             <button
               type="button"
               onClick={() => pan(0, PAN_STEP)}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Pan down
             </button>
             <button
               type="button"
               onClick={resetView}
-              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Reset view
             </button>

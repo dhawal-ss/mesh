@@ -360,7 +360,7 @@ export function SearchBar({
             setIsOpen(true)
           }
         }}
-        className={`flex h-8 items-center justify-center gap-1.5 rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant ${
+        className={`flex h-8 items-center justify-center gap-1.5 rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant ${
           label ? 'px-2' : 'w-8'
         }`}
         title="Search messages"
@@ -452,7 +452,7 @@ export function SearchBar({
               <button
                 type="button"
                 onClick={() => closeSearch()}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
                 aria-label="Close message search"
               >
                 <Icon name="x" size="sm" />
@@ -494,8 +494,8 @@ export function SearchBar({
                     onClick={() => selectTab(tab.key)}
                     className={`min-h-7 rounded-full border-b-bar px-2 text-body-sm font-medium transition-colors ${
                       resultTab === tab.key
-                        ? 'border-primary bg-secondary-container text-on-surface'
-                        : 'border-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant'
+                        ? 'border-primary bg-secondary-container text-on-secondary-container'
+                        : 'border-transparent text-on-surface-variant hover:bg-state-hover hover:text-on-surface-variant'
                     }`}
                   >
                     {tab.label} ({resultCounts[tab.key]})
@@ -518,7 +518,7 @@ export function SearchBar({
                           type="button"
                           aria-label={hint.label}
                           onClick={() => applyFilterHint(hint.token)}
-                          className="min-h-8 rounded-full border border-outline-variant px-2 text-body-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                          className="min-h-8 rounded-full border border-outline-variant px-2 text-body-sm text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                         >
                           {hint.token}
                         </button>
@@ -540,7 +540,7 @@ export function SearchBar({
                   <button
                     type="button"
                     onClick={() => void performSearch(query)}
-                    className="mt-3 min-h-8 rounded-full border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                    className="mt-3 min-h-8 rounded-full border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
                   >
                     Try again
                   </button>
@@ -611,7 +611,7 @@ export function SearchBar({
                     role="option"
                     aria-selected={index === activeResultIndex}
                     onClick={() => handleResultClick(message)}
-                    className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface-container-high ${index === activeResultIndex ? 'bg-surface-container-high' : ''}`}
+                    className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-state-hover ${index === activeResultIndex ? 'bg-surface-container-high' : ''}`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-body-md font-medium text-on-surface">{message.authorDisplayName}</span>

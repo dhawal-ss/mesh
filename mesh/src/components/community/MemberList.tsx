@@ -907,7 +907,7 @@ const MemberRow = memo(function MemberRow({
       data-sequence-position={embedded ? undefined : sequence['data-sequence-position']}
       className={`${
         embedded
-          ? 'rounded-full border border-transparent hover:border-outline-variant hover:bg-surface-container-high'
+          ? 'rounded-full border border-transparent hover:border-outline-variant hover:bg-state-hover'
           : sequence.className
       } group flex min-h-11 items-center gap-3 px-2 transition-colors`}
     >
@@ -963,7 +963,7 @@ const MemberRow = memo(function MemberRow({
               {member.role !== 'member' && (
                 <span
                   className={`flex-shrink-0 rounded px-1.5 py-0.5 text-label-sm font-semibold ${
-                    member.role === 'owner' ? 'bg-primary-container text-primary' : 'bg-surface-container-highest text-on-surface-variant'
+                    member.role === 'owner' ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container-highest text-on-surface-variant'
                   }`}
                 >
                   {member.role === 'owner' ? 'Owner' : 'Admin'}
@@ -1113,7 +1113,7 @@ function MemberProfileCard({
             {member.role !== 'member' && (
               <span
                 className={`flex-shrink-0 rounded px-1.5 py-0.5 text-label-sm font-semibold ${
-                  member.role === 'owner' ? 'bg-primary-container text-primary' : 'bg-surface-container-highest text-on-surface-variant'
+                  member.role === 'owner' ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container-highest text-on-surface-variant'
                 }`}
               >
                 {roleLabel}
@@ -1162,7 +1162,7 @@ function MemberProfileCard({
               <button
                 type="button"
                 onClick={onBan}
-                className="flex min-h-8 w-full items-center gap-2 rounded-full px-2 text-left text-body-md text-error transition-colors hover:bg-error-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="flex min-h-8 w-full items-center gap-2 rounded-full px-2 text-left text-body-md text-on-error-container transition-colors hover:bg-error-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <Icon name="triangleAlert" size="sm" />
                 Ban from community
@@ -1179,7 +1179,7 @@ function MemberProfileCard({
                 type="button"
                 onClick={onToggleBlock}
                 disabled={blockStatus !== 'ready' || blockBusy}
-                className="flex min-h-8 w-full items-center gap-2 rounded-full px-2 text-left text-body-md text-error transition-colors hover:bg-error-container-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="flex min-h-8 w-full items-center gap-2 rounded-full px-2 text-left text-body-md text-on-error-container transition-colors hover:bg-error-container-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <Icon name="userX" size="sm" />
                 {blockStatus === 'loading' || blockStatus === 'idle'

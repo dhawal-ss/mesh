@@ -625,7 +625,7 @@ export function UserSettingsPanel({
               {profileValidation && (
                 <p
                   role="alert"
-                  className="rounded-xl bg-error-container px-3 py-2 text-body-sm text-error"
+                  className="rounded-xl bg-error-container px-3 py-2 text-body-sm text-on-error-container"
                 >
                   {profileValidation}
                 </p>
@@ -660,7 +660,7 @@ export function UserSettingsPanel({
                 <>
                   <button
                     type="button"
-                    className="mt-3 min-h-9 rounded-full px-2 text-body-md font-semibold text-primary hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="mt-3 min-h-9 rounded-full px-2 text-body-md font-semibold text-on-primary-container hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                     aria-expanded={showAccountAddress}
                     onClick={() => setShowAccountAddress((shown) => !shown)}
                   >
@@ -851,7 +851,7 @@ export function UserSettingsPanel({
             </p>
             <button
               type="button"
-              className="min-h-9 rounded-full px-2 text-body-md font-medium text-primary hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-9 rounded-full px-2 text-body-md font-medium text-on-primary-container hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               onClick={() => {
                 if (!confirmingRoomOrganizationReset) {
                   setConfirmingRoomOrganizationReset(true)
@@ -898,7 +898,7 @@ export function UserSettingsPanel({
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-outline-variant pt-4">
             <button
               type="button"
-              className="min-h-9 rounded-full px-2 text-body-md font-medium text-primary hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-9 rounded-full px-2 text-body-md font-medium text-on-primary-container hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               onClick={() => {
                 setAppearanceTheme('dark')
                 setAppearanceDensity('default')
@@ -1566,7 +1566,7 @@ function AccountSettingsLink({
     <button
       type="button"
       data-sequence-position={sequence['data-sequence-position']}
-      className={`${sequence.className} flex min-h-11 w-full items-center justify-between gap-4 px-3 py-2.5 text-left transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus`}
+      className={`${sequence.className} flex min-h-11 w-full items-center justify-between gap-4 px-3 py-2.5 text-left transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus`}
       onClick={onClick}
     >
       <span className="min-w-0 truncate text-body-md font-medium text-on-surface">{title}</span>
@@ -1692,7 +1692,7 @@ function SoundEventRow({
         <p className="mt-0.5 text-body-sm text-on-surface-variant">{description}</p>
         <button
           type="button"
-          className="mt-2 min-h-8 rounded-full px-2 text-body-sm font-semibold text-primary hover:bg-primary-container-hover"
+          className="mt-2 min-h-8 rounded-full px-2 text-body-sm font-semibold text-on-primary-container hover:bg-primary-container-hover"
           aria-label={previewLabel}
           onClick={() => void playInterfaceSound(sound, { preview: true, masterVolume: volume })}
         >

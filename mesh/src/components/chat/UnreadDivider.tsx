@@ -40,7 +40,7 @@ export function UnreadDivider({ onMarkRead }: UnreadDividerProps) {
         <button
           type="button"
           onClick={onMarkRead}
-          className="min-h-control-sm flex-shrink-0 rounded-full px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          className="min-h-control-sm flex-shrink-0 rounded-full px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         >
           Mark as read
         </button>

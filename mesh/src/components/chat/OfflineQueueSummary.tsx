@@ -47,7 +47,7 @@ export function OfflineQueueSummary({
       ? `${announcedFailed} ${announcedFailed === 1 ? 'message could' : 'messages could'} not be sent.`
       : ''
     return (
-      <div className="flex min-h-10 items-center gap-2 border-t border-error-container-line bg-error-container px-4 text-label-sm text-on-surface-variant">
+      <div className="flex min-h-10 items-center gap-2 border-t border-error-container-line bg-error-container px-4 text-label-sm text-on-error-container">
         <Icon name="triangleAlert" size="xs" className="flex-shrink-0 text-error" />
         <span className="min-w-0 flex-1 truncate">
           <span className="font-semibold text-on-surface">{visibleCopy}.</span>
@@ -55,7 +55,7 @@ export function OfflineQueueSummary({
         <button
           type="button"
           onClick={onReviewFailed ?? onReview}
-          className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+          className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
         >
           Review
         </button>
@@ -86,7 +86,7 @@ export function OfflineQueueSummary({
       <button
         type="button"
         onClick={onReview}
-        className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+        className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
       >
         Review
       </button>

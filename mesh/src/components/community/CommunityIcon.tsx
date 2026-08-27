@@ -197,14 +197,20 @@ export function CommunityIcon({
             data-mesh-rail-action={railActionKey}
             aria-label={`${community.name}${isPinned ? ', pinned' : ''}${hasMentions ? `, ${mentionCount} ${mentionCount === 1 ? 'mention' : 'mentions'}` : ''}${hasUnread ? `, ${unreadCount} unread` : ''}${liveVoice ? ', live voice' : ''}${isMuted ? ', muted' : ''}`}
             aria-current={active ? 'true' : undefined}
-            className={`group relative flex h-12 w-12 items-center justify-center overflow-hidden border transition-all duration-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+            /*
+              The shape change is the selection cue, which is what keeps the
+              rail readable without colour: a circle at rest, a 16px tile when
+              this is the community you are in. There is no border on either
+              face -- a tonal ground and a radius say it without one.
+            */
+            className={`group relative flex h-12 w-12 items-center justify-center overflow-hidden transition-all duration-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
               active
-                ? 'rounded-lg border-primary-container-line bg-primary'
-                : 'rounded-round border-outline-variant bg-surface-container-lowest hover:rounded-lg hover:border-outline hover:bg-surface-container-high'
+                ? 'rounded-lg bg-primary'
+                : 'rounded-round bg-surface-container-low hover:rounded-lg hover:bg-state-hover'
             }`}
           >
             <Avatar
-              color={active ? 'var(--accent)' : pixelColorForSeed(community.id)}
+              color={active ? 'var(--primary)' : pixelColorForSeed(community.id)}
               seed={community.id}
               size={48}
               name={community.name}
@@ -217,7 +223,7 @@ export function CommunityIcon({
           <span
             data-rail-mention
             aria-hidden="true"
-            className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-round border border-surface-container-lowest bg-error px-1 text-body-sm font-semibold text-on-error"
+            className="mesh-status-badge absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-label-sm text-on-error"
           >
             {mentionCount > 99 ? '99+' : mentionCount}
           </span>

@@ -248,7 +248,7 @@ export function RoomContextPanel({
           </div>
           <button
             type="button"
-            className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant"
+            className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant"
             aria-label="Close room context"
             onClick={onClose}
           >
@@ -493,7 +493,7 @@ export function RoomContextPanel({
             )}
             <button
               type="button"
-              className="min-h-control-md w-full rounded-full border border-outline-variant px-3 text-body-sm font-medium text-on-surface-variant transition-colors hover:border-outline hover:bg-surface-container-high hover:text-on-surface"
+              className="min-h-control-md w-full rounded-full border border-outline-variant px-3 text-body-sm font-medium text-on-surface-variant transition-colors hover:border-outline hover:bg-state-hover hover:text-on-surface"
               onClick={() => setSecurityOpen(true)}
             >
               Review devices
@@ -528,7 +528,7 @@ export function RoomContextPanel({
               </button>
               <button
                 type="button"
-                className="min-h-control-md rounded-full border border-outline-variant px-3 text-body-sm font-medium text-on-surface-variant transition-colors hover:border-outline hover:bg-surface-container-high hover:text-on-surface"
+                className="min-h-control-md rounded-full border border-outline-variant px-3 text-body-sm font-medium text-on-surface-variant transition-colors hover:border-outline hover:bg-state-hover hover:text-on-surface"
                 onClick={() => void copyRoomLink()}
               >
                 Copy room link
@@ -577,7 +577,7 @@ export function RoomContextPanel({
                     </span>
                     <button
                       type="button"
-                      className="min-h-8 rounded-full px-2 text-label-sm font-semibold text-primary hover:bg-surface-container-high"
+                      className="min-h-8 rounded-full px-2 text-label-sm font-semibold text-primary hover:bg-state-hover"
                       onClick={() => requestNavigation(message)}
                     >
                       Go to message
@@ -636,7 +636,7 @@ export function RoomContextPanel({
                 <button
                   key={message.id}
                   type="button"
-                  className="min-h-control-lg w-full rounded-xl border border-transparent p-2 text-left transition-colors hover:border-outline-variant hover:bg-surface-container-high"
+                  className="min-h-control-lg w-full rounded-xl border border-transparent p-2 text-left transition-colors hover:border-outline-variant hover:bg-state-hover"
                   onClick={() => requestNavigation(message)}
                 >
                   <span className="flex items-center gap-1.5 text-label-sm text-primary">
@@ -721,7 +721,7 @@ export function RoomContextPanel({
                       onClick={() => onOpenThread(item.root.id)}
                       aria-expanded={openThreadId === item.root.id}
                       aria-controls="mesh-thread-panel"
-                      className="min-h-control-lg w-full rounded-xl border border-transparent p-2 text-left transition-colors hover:border-outline-variant hover:bg-surface-container-high"
+                      className="min-h-control-lg w-full rounded-xl border border-transparent p-2 text-left transition-colors hover:border-outline-variant hover:bg-state-hover"
                     >
                       <span className="flex items-center gap-1.5 text-label-sm text-primary">
                         <Icon name="reply" size="xs" />
@@ -795,12 +795,12 @@ export function RoomContextPanel({
       >
         <div className="space-y-3">
           {permissions.error ? (
-            <p className="rounded-xl border border-error-container-line bg-error-container px-3 py-2 text-body-sm text-error">
+            <p className="rounded-xl border border-error-container-line bg-error-container px-3 py-2 text-body-sm text-on-error-container">
               {permissions.error}
             </p>
           ) : null}
           {permissions.projection?.discoveryFailureReason ? (
-            <p className="rounded-xl border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-marker">
+            <p className="rounded-xl border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container">
               {permissions.projection.discoveryFailureReason}
             </p>
           ) : null}

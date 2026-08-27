@@ -246,10 +246,11 @@ describe('ChatView channel switching', () => {
   /*
     The header slot beside the room name held a generated sentence, the same one
     for every room in a community, because `m.room.topic` was writable over IPC
-    and no UI ever wrote one. A room that has a description now says what it is
-    for; one that does not keeps the generated line rather than going blank.
+    and no UI ever wrote one. It then held the room's real description; it now
+    holds neither, because a Material 3 small top app bar is one 64px line and
+    the description belongs in the details sheet that already renders it.
   */
-  it('shows the room description in the header, and nothing without one', async () => {
+  it('keeps the room description out of the app bar', async () => {
     vi.spyOn(bridge, 'isMatrixBackend').mockReturnValue(false)
     vi.spyOn(bridge, 'getMessages').mockResolvedValue([])
     vi.spyOn(bridge, 'requestMessageHistory').mockResolvedValue(undefined)
@@ -262,8 +263,10 @@ describe('ChatView channel switching', () => {
       await flushAsyncWork()
     })
 
-    expect(container.textContent).toContain('Reference and sketches.')
+    expect(container.textContent).not.toContain('Reference and sketches.')
     expect(container.textContent).not.toContain('Share messages, files, and links')
+    // The room name is still the bar's own heading.
+    expect(container.querySelector('h1')?.textContent).toBe('concept-art')
 
     await act(async () => {
       root.render(<ChatView channel={channel('channel-b', 'lobby')} />)
@@ -271,10 +274,9 @@ describe('ChatView channel switching', () => {
     })
 
     /*
-      Changed deliberately: a room with no description now gets no line.
-      The generated stand-in said what every room in Mesh is for, so it was the
-      same sentence in every header that had not been written, sitting in the
-      slot a reader checks to find out what this room in particular is about.
+      A room with no description gets no line either. The generated stand-in
+      said what every room in Mesh is for, so it was the same sentence in every
+      header that had not been written.
     */
     expect(container.textContent).not.toContain('Share messages, files, and links')
     expect(container.textContent).not.toContain('Messages and updates for')

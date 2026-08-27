@@ -99,7 +99,7 @@ export function EditComposer({
                   disabled={disabled}
                   aria-label="Open emoji picker"
                   aria-expanded={emojiOpen}
-                  className="flex h-control-sm w-control-sm items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-control-sm w-control-sm items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Icon name="smile" size="sm" />
                 </button>

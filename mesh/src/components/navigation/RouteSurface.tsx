@@ -198,7 +198,7 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
               <button
                 key={channel.id}
                 type="button"
-                className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-surface-container-high"
+                className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-state-hover"
                 onClick={() => openTextRoom(channel)}
                 aria-label={`Open room ${channel.name}`}
               >
@@ -234,7 +234,7 @@ function CommunityDeskSurface({ communityId }: { communityId: string }) {
                 <button
                   key={channel.id}
                   type="button"
-                  className="mesh-home-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-surface-container-high"
+                  className="mesh-home-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-state-hover"
                   onClick={() => {
                     setActiveChannel(channel.id)
                     navigate({ kind: 'voice', communityId, roomId: channel.id })
@@ -427,7 +427,7 @@ function CommunitiesRouteSurface({ mode }: { mode: CommunitiesMode }) {
                 aria-controls="mesh-communities-panel"
                 tabIndex={currentEntry.key === entry.key ? 0 : -1}
                 className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  currentEntry.key === entry.key ? 'bg-primary-container text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                  currentEntry.key === entry.key ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
                 onClick={() => selectMode(entry)}
                 onKeyDown={(event) => moveModeFocus(event, entry.key)}
@@ -634,7 +634,7 @@ function YouRouteSurface({ section }: { section: YouSection }) {
                 aria-controls="mesh-you-panel"
                 tabIndex={effectiveSection === entry.section ? 0 : -1}
                 className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  effectiveSection === entry.section ? 'bg-primary-container text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                  effectiveSection === entry.section ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
                 onClick={() => selectSection(entry)}
                 onKeyDown={(event) => moveSectionFocus(event, entry.section)}
@@ -798,7 +798,7 @@ function CommunityAdminRouteSurface({
                 aria-controls="mesh-community-admin-panel"
                 tabIndex={section === entry.section ? 0 : -1}
                 className={`mesh-route-tab min-h-11 rounded-full px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-                  section === entry.section ? 'bg-primary-container text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                  section === entry.section ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
                 onClick={() => selectSection(entry)}
                 onKeyDown={(event) => moveSectionFocus(event, entry.section)}

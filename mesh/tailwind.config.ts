@@ -71,6 +71,7 @@ export default {
         // ── The three colour families ─────────────────────────────────────
         primary: {
           DEFAULT: withAlpha('--primary-rgb'),
+          hover: 'var(--primary-hover)',
           container: withAlpha('--primary-container-rgb'),
           'container-hover': 'var(--primary-container-hover)',
           'container-active': 'var(--primary-container-active)',
@@ -93,6 +94,7 @@ export default {
         },
         error: {
           DEFAULT: withAlpha('--error-rgb'),
+          hover: 'var(--error-hover)',
           container: withAlpha('--error-container-rgb'),
           'container-hover': 'var(--error-container-hover)',
           'container-active': 'var(--error-container-active)',
@@ -104,6 +106,7 @@ export default {
         },
         marker: {
           DEFAULT: withAlpha('--marker-rgb'),
+          hover: 'var(--marker-hover)',
           container: withAlpha('--marker-container-rgb'),
           'container-hover': 'var(--marker-container-hover)',
           'container-active': 'var(--marker-container-active)',

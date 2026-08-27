@@ -793,7 +793,7 @@ export const MessageComponent = memo(function MessageComponent({
                       .then(() => showToast('Message text copied.', 'success'))
                       .catch(() => showToast('Could not copy this message.', 'error'))
                   }}
-                  className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   Copy text
                 </button>
@@ -801,7 +801,7 @@ export const MessageComponent = memo(function MessageComponent({
                   <button
                     type="button"
                     onClick={() => onCancel(message)}
-                    className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="min-h-control-sm rounded-full px-2 font-medium text-on-surface-variant transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     Remove
                   </button>
@@ -952,7 +952,7 @@ export const MessageComponent = memo(function MessageComponent({
                     ? `Close thread for message from ${message.authorDisplayName}`
                     : `Open thread for message from ${message.authorDisplayName}, ${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`
                 }
-                className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-full px-2 text-body-sm font-medium text-primary transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-full px-2 text-body-sm font-medium text-primary transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <Icon name="messageCircle" size="xs" />
                 {threadOpen ? 'Close thread' : `${threadReplyCount} ${threadReplyCount === 1 ? 'reply' : 'replies'}`}
@@ -992,7 +992,7 @@ export const MessageComponent = memo(function MessageComponent({
                           */
                           className={`inline-flex min-h-6 items-center gap-1 rounded-full border border-rule px-1.5 py-0.5 text-body-sm transition-colors ${
                             mine
-                              ? 'border-primary bg-primary-container text-primary'
+                              ? 'border-primary bg-primary-container text-on-primary-container'
                               : 'border-outline text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                           }`}
                         >
@@ -1060,7 +1060,7 @@ export const MessageComponent = memo(function MessageComponent({
                       rememberEmoji(emoji)
                     }}
                     aria-label={`Quick react with ${emojiName}`}
-                    className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus motion-safe:active:scale-95"
+                    className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus motion-safe:active:scale-95"
                   >
                     {custom ? (
                       <img src={custom.imageUrl} alt="" className="h-5 w-5 object-contain" />
@@ -1080,7 +1080,7 @@ export const MessageComponent = memo(function MessageComponent({
                   <button
                     ref={reactButtonRef}
                     {...actionButtonProps('react')}
-                    className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                     aria-label={`React to message from ${message.authorDisplayName}`}
                     aria-expanded={showReactions}
                   >
@@ -1098,7 +1098,7 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('edit')}
                   onClick={handleStartEdit}
-                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   aria-label="Edit message"
                 >
                   <Icon name="squarePen" size="sm" />
@@ -1109,7 +1109,7 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('reply')}
                   onClick={() => onReply(message)}
-                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   aria-label={`Reply to ${message.authorDisplayName}`}
                 >
                   <Icon name="reply" size="sm" />
@@ -1120,7 +1120,7 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('thread')}
                   onClick={onToggleThread}
-                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="flex h-8 w-8 items-center justify-center text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   aria-expanded={threadOpen}
                   aria-controls="mesh-thread-panel"
                   aria-label={
@@ -1139,7 +1139,7 @@ export const MessageComponent = memo(function MessageComponent({
                   type="button"
                   {...actionButtonProps('pin')}
                   onClick={() => void handlePin()}
-                  className={`flex h-8 w-8 items-center justify-center transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+                  className={`flex h-8 w-8 items-center justify-center transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                     isPinned ? 'text-primary' : 'text-on-surface-variant'
                   }`}
                   aria-label={isPinned ? 'Unpin message' : 'Pin message'}
@@ -1479,9 +1479,9 @@ export function FileAttachmentCard({
           disabled={isDownloading && !matrixMode}
           className={`mt-2 min-h-9 w-full rounded-full px-3 text-body-sm font-semibold transition-colors ${
             isCompleted
-              ? 'bg-primary-container text-primary hover:bg-primary-container-hover'
+              ? 'bg-primary-container text-on-primary-container hover:bg-primary-container-hover'
               : isErrored
-                ? 'bg-error-container text-error hover:bg-error-container-hover'
+                ? 'bg-error-container text-on-error-container hover:bg-error-container-hover'
                 : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest'
           } disabled:opacity-60`}
           aria-label={actionLabel}
@@ -1539,9 +1539,9 @@ export function FileAttachmentCard({
           disabled={isDownloading && !matrixMode}
           className={`rounded px-3 py-1.5 text-body-sm font-medium transition-colors ${
             isCompleted
-              ? 'bg-primary-container text-primary hover:bg-primary-container-hover'
+              ? 'bg-primary-container text-on-primary-container hover:bg-primary-container-hover'
               : isErrored
-                ? 'bg-error-container text-error hover:bg-error-container-hover'
+                ? 'bg-error-container text-on-error-container hover:bg-error-container-hover'
                 : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest'
           } disabled:opacity-60`}
           aria-label={actionLabel}

@@ -443,8 +443,8 @@ function parseInline(
             data-mention-id={!isRoomWide ? mentionId : undefined}
             data-mention-kind={isRoomWide ? 'room-wide' : 'user'}
             className={isSelf
-              ? 'inline-flex rounded-xl border border-primary-container-line bg-primary-container-active px-1.5 py-0.5 font-medium text-primary'
-              : 'inline-flex rounded-xl bg-primary-container px-1.5 py-0.5 font-medium text-primary hover:bg-primary-container-hover'}
+              ? 'inline-flex rounded-xl border border-primary-container-line bg-primary-container-active px-1.5 py-0.5 font-medium text-on-primary-container'
+              : 'inline-flex rounded-xl bg-primary-container px-1.5 py-0.5 font-medium text-on-primary-container hover:bg-primary-container-hover'}
           >
             {label}
           </span>,

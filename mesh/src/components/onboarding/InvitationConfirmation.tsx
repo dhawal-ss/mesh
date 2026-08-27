@@ -304,7 +304,7 @@ export function InvitationSurface({
               </div>
 
               {phase === 'failed' && errorDescription ? (
-                <div role="alert" className="border border-error-container-line bg-error-container p-3 text-body-md text-on-surface-variant">
+                <div role="alert" className="border border-error-container-line bg-error-container p-3 text-body-md text-on-error-container">
                   <p className="font-semibold text-on-surface">{errorDescription.title}</p>
                   <p className="mt-1">{errorDescription.action}</p>
                 </div>

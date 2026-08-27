@@ -37,10 +37,10 @@ const TONE_INK = {
 const VARIANT_GROUND = {
   standard: 'hover:bg-state-hover',
   filled: {
-    neutral: 'bg-surface-container-highest text-on-surface hover:bg-surface-container-high',
-    accent: 'bg-primary text-on-primary hover:bg-primary-container-hover',
-    danger: 'bg-error text-on-error hover:bg-error-container-hover',
-    marker: 'bg-marker text-on-marker hover:bg-marker-container-hover',
+    neutral: 'bg-surface-container-highest text-on-surface hover:bg-state-hover',
+    accent: 'bg-primary text-on-primary hover:bg-primary-hover',
+    danger: 'bg-error text-on-error hover:bg-error-hover',
+    marker: 'bg-marker text-on-marker hover:bg-marker-hover',
   },
   tonal: {
     neutral: 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest',

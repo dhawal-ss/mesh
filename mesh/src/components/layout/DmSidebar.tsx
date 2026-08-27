@@ -248,7 +248,7 @@ export function DmSidebar() {
         <button
           type="button"
           aria-label="Find someone to message"
-          className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-primary-container-line bg-primary-container px-2.5 text-label-sm font-semibold text-on-surface transition-colors hover:border-outline hover:bg-surface-container-high"
+          className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-primary-container-line bg-primary-container px-2.5 text-label-sm font-semibold text-on-primary-container transition-colors hover:border-outline hover:bg-state-hover"
           onClick={startConversation}
         >
           <Icon name="squarePen" size="sm" />
@@ -265,7 +265,7 @@ export function DmSidebar() {
             ref={requestsHeadingRef}
             id="dm-requests-heading"
             type="button"
-            className="flex min-h-10 w-full items-center gap-2 rounded-full px-2 text-left text-body-md font-semibold text-on-surface hover:bg-surface-container-high"
+            className="flex min-h-10 w-full items-center gap-2 rounded-full px-2 text-left text-body-md font-semibold text-on-surface hover:bg-state-hover"
             aria-expanded={requestsExpanded}
             aria-controls="dm-request-list"
             onClick={() => setRequestsExpanded((expanded) => !expanded)}
@@ -284,11 +284,11 @@ export function DmSidebar() {
                 People you haven&apos;t chatted with yet. Messages stay out of your inbox until you accept.
               </p>
               {requestLoad.status === 'failed' && (
-                <div role="alert" className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant">
+                <div role="alert" className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container">
                   <span>Message requests could not be refreshed.</span>{' '}
                   <button
                     type="button"
-                    className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+                    className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
                     onClick={() => void loadRequests().catch(() => {})}
                   >
                     Retry
@@ -388,7 +388,7 @@ export function DmSidebar() {
             ref={blockedHeadingRef}
             id="blocked-accounts-heading"
             type="button"
-            className="flex min-h-10 w-full items-center gap-2 rounded-full px-2 text-left text-body-md font-semibold text-on-surface hover:bg-surface-container-high"
+            className="flex min-h-10 w-full items-center gap-2 rounded-full px-2 text-left text-body-md font-semibold text-on-surface hover:bg-state-hover"
             aria-expanded={blockedExpanded}
             aria-controls="blocked-account-list"
             onClick={() => {
@@ -411,11 +411,11 @@ export function DmSidebar() {
                 Their messages and new requests are ignored.
               </p>
               {blockedAccountLoad.status === 'failed' && (
-                <div role="alert" className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant">
+                <div role="alert" className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container">
                   <span>Blocked accounts could not be refreshed.</span>{' '}
                   <button
                     type="button"
-                    className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+                    className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
                     onClick={() => void loadBlockedAccounts().catch(() => {})}
                   >
                     Retry
@@ -555,12 +555,12 @@ export function DmSidebar() {
         ) : conversationLoad.status === 'failed' && conversations.length === 0 ? (
           <div
             role="alert"
-            className="rounded-full border border-marker-container-line bg-marker-container px-3 py-3 text-body-sm text-on-surface-variant"
+            className="rounded-full border border-marker-container-line bg-marker-container px-3 py-3 text-body-sm text-on-marker-container"
           >
             <p>Conversations could not be loaded.</p>
             <button
               type="button"
-              className="mt-2 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+              className="mt-2 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
               onClick={() => void loadConversations().catch(() => {})}
             >
               Retry conversations
@@ -619,12 +619,12 @@ export function DmSidebar() {
       {conversationLoad.status === 'failed' && conversations.length > 0 && (
         <div
           role="alert"
-          className="mx-2 mb-2 rounded-full border border-marker-container-line bg-marker-container px-2 py-2 text-body-sm text-on-surface-variant"
+          className="mx-2 mb-2 rounded-full border border-marker-container-line bg-marker-container px-2 py-2 text-body-sm text-on-marker-container"
         >
           <span>Could not refresh conversations. Showing the last update.</span>{' '}
           <button
             type="button"
-            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
             onClick={() => void loadConversations().catch(() => {})}
           >
             Retry

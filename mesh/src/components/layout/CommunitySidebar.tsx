@@ -350,33 +350,39 @@ function RailAction({
   onFocus: () => void
   onClick: () => void
 }) {
+  /*
+    A Material 3 navigation rail item: a 56x32 pill indicator, a 24px glyph,
+    and the label underneath in label-medium.
+
+    The label used to be `sr-only` and a tooltip carried it for everybody else.
+    Making it real text is the one plainly usable thing this migration buys the
+    rail, and it is what the 88px width is for. The pill is also the selection
+    marker, so the 3px inset bar `.mesh-rail-slot` used to paint is gone: an
+    indicator and a marker saying the same thing twice is one of them too many.
+  */
   return (
-    <div className="mesh-rail-slot" data-rail-active={active ? 'true' : undefined}>
-      <Tooltip content={accessibleLabel} side="right">
-        <button
-          type="button"
-          onClick={onClick}
-          onFocus={onFocus}
-          tabIndex={tabIndex}
-          data-mesh-rail-action={railActionKey}
-          aria-label={accessibleLabel}
-          aria-current={active ? 'page' : undefined}
-          className={`mesh-rail-action group flex h-12 w-12 flex-col items-center justify-center rounded-full text-body-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-            active ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'
-          }`}
-        >
-          <span
-            className={`mesh-rail-action-icon flex h-10 w-10 items-center justify-center rounded-round border transition-all duration-normal ${
-              active
-                ? 'rounded-lg border-primary-container-line bg-primary-container text-on-primary-container'
-                : 'border-transparent bg-surface-container-lowest group-hover:rounded-lg group-hover:border-outline-variant group-hover:bg-surface-container-high'
-            }`}
-          >
-            <Icon name={icon} size="md" />
-          </span>
-          <span className="sr-only">{label}</span>
-        </button>
-      </Tooltip>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      onFocus={onFocus}
+      tabIndex={tabIndex}
+      data-mesh-rail-action={railActionKey}
+      aria-label={accessibleLabel}
+      aria-current={active ? 'page' : undefined}
+      className={`mesh-rail-action group flex w-full flex-col items-center gap-1 rounded-lg py-1 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
+        active ? 'text-on-surface' : 'text-on-surface-variant hover:text-on-surface'
+      }`}
+    >
+      <span
+        className={`mesh-rail-action-icon flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-normal ${
+          active
+            ? 'bg-secondary-container text-on-secondary-container'
+            : 'group-hover:bg-state-hover'
+        }`}
+      >
+        <Icon name={icon} size="md" />
+      </span>
+      <span className="max-w-full truncate px-1 text-label-md">{label}</span>
+    </button>
   )
 }

@@ -78,7 +78,7 @@ export function DmSafetyPanel({
         <button
           type="button"
           onClick={onClose}
-          className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
           aria-label="Close safety"
         >
           <Icon name="x" size="sm" />
@@ -113,7 +113,7 @@ export function DmSafetyPanel({
           <button
             type="button"
             onClick={(event) => onReviewDevices(event.currentTarget)}
-            className="mt-3 min-h-9 w-full rounded-full border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:border-outline hover:bg-surface-container-high hover:text-on-surface"
+            className="mt-3 min-h-9 w-full rounded-full border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:border-outline hover:bg-state-hover hover:text-on-surface"
           >
             Review devices and backup
           </button>
@@ -130,7 +130,7 @@ export function DmSafetyPanel({
                 <button
                   type="button"
                   onClick={() => void handleCopyAddress()}
-                  className="min-h-9 flex-1 rounded-full border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  className="min-h-9 flex-1 rounded-full border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
                   aria-label={`Copy account address for ${peerName}`}
                 >
                   Copy address
@@ -138,7 +138,7 @@ export function DmSafetyPanel({
                 <button
                   type="button"
                   onClick={() => setShowAddress(false)}
-                  className="min-h-9 rounded-full px-3 text-body-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  className="min-h-9 rounded-full px-3 text-body-sm font-medium text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
                 >
                   Hide
                 </button>
@@ -148,7 +148,7 @@ export function DmSafetyPanel({
             <button
               type="button"
               onClick={() => setShowAddress(true)}
-              className="mt-3 min-h-9 rounded-full px-3 text-body-sm font-semibold text-primary hover:bg-surface-container-high"
+              className="mt-3 min-h-9 rounded-full px-3 text-body-sm font-semibold text-primary hover:bg-state-hover"
             >
               Show account address
             </button>
@@ -182,7 +182,7 @@ export function DmSafetyPanel({
             type="button"
             onClick={onToggleBlocked}
             disabled={isBlockBusy}
-            className="mt-4 min-h-9 w-full rounded-full border border-error-container-line px-3 text-body-sm font-semibold text-error hover:bg-error-container-hover disabled:opacity-50"
+            className="mt-4 min-h-9 w-full rounded-full border border-error-container-line px-3 text-body-sm font-semibold text-on-error-container hover:bg-error-container-hover disabled:opacity-50"
           >
             {isBlockBusy ? 'Saving…' : isBlocked ? `Unblock ${peerName}` : `Block ${peerName}`}
           </button>

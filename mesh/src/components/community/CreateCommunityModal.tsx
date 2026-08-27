@@ -465,8 +465,8 @@ export function CreateCommunityModal({
               onKeyDown={(event) => moveTabFocus(event, index)}
               className={`relative flex min-h-12 items-center justify-center gap-2 rounded-full border px-4 py-2 text-body-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                 tab === t
-                  ? 'border-primary-container-line bg-primary-container text-on-surface'
-                  : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:border-outline hover:bg-surface-container-high hover:text-on-surface-variant'
+                  ? 'border-primary-container-line bg-primary-container text-on-primary-container'
+                  : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:border-outline hover:bg-state-hover hover:text-on-surface-variant'
               }`}
             >
               {/*
@@ -514,7 +514,7 @@ export function CreateCommunityModal({
                 <p className="text-body-md font-semibold text-on-surface-variant">
                   {createStep === 1 ? 'Name and image' : 'Access and starter rooms'}
                 </p>
-                <span className="rounded-full bg-secondary-container px-2.5 py-1 text-body-sm text-on-surface-variant">
+                <span className="rounded-full bg-secondary-container px-2.5 py-1 text-body-sm text-on-secondary-container">
                   Step {createStep} of 2
                 </span>
               </div>
@@ -607,7 +607,7 @@ export function CreateCommunityModal({
                           className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                             accessChoice === value
                               ? 'border-primary bg-primary-container'
-                              : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-high'
+                              : 'border-outline-variant bg-surface-container-lowest hover:bg-state-hover'
                           }`}
                         >
                           <input
@@ -632,7 +632,7 @@ export function CreateCommunityModal({
                           className={`cursor-pointer rounded-full border px-3 py-3 has-[input:focus-visible]:outline has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus ${
                             template === option.id
                               ? 'border-primary bg-primary-container'
-                              : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-high'
+                              : 'border-outline-variant bg-surface-container-lowest hover:bg-state-hover'
                           }`}
                         >
                           <input
@@ -680,7 +680,7 @@ export function CreateCommunityModal({
               {createdCommunity && creationPhase === 'partial' && (
                 <div
                   role="status"
-                  className="mt-3 rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-md text-on-surface-variant"
+                  className="mt-3 rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-md text-on-marker-container"
                 >
                   {accessSettingFailed ? (
                     <>
@@ -774,7 +774,7 @@ export function CreateCommunityModal({
               {joinStatus && (
                 <p
                   role="status"
-                  className="mt-2 rounded-full border border-primary-container-line bg-primary-container px-3 py-2 text-body-md text-primary"
+                  className="mt-2 rounded-full border border-primary-container-line bg-primary-container px-3 py-2 text-body-md text-on-primary-container"
                 >
                   {joinStatus}
                 </p>

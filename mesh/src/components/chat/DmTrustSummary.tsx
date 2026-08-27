@@ -53,7 +53,7 @@ export function DmTrustSummary({
           type="button"
           className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-full px-2 text-label-sm font-medium transition-colors ${
             trust.protection === 'unencrypted' || needsReview
-                ? 'bg-marker-container text-marker hover:bg-marker-container-hover'
+                ? 'bg-marker-container text-on-marker-container hover:bg-marker-container-hover'
                 : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface-variant'
           }`}
           aria-label={`${triggerLabel}. Open conversation safety details.`}
@@ -120,7 +120,7 @@ export function DmTrustSummary({
           className={`min-h-control-md w-full rounded-full px-3 text-body-sm font-semibold transition-colors ${
             needsReview
               ? 'bg-primary text-on-primary hover:bg-primary'
-              : 'border border-outline-variant text-on-surface-variant hover:border-outline hover:bg-surface-container-high hover:text-on-surface'
+              : 'border border-outline-variant text-on-surface-variant hover:border-outline hover:bg-state-hover hover:text-on-surface'
           }`}
           onClick={() => {
             setNextModalRestoreFocusTarget(triggerRef.current)

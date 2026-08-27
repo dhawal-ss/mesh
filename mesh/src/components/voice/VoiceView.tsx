@@ -181,7 +181,7 @@ export function VoiceView({
           ref={rosterButtonRef}
           type="button"
           onClick={() => setRosterOpen(true)}
-          className="flex min-h-10 items-center gap-2 px-2 text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface voice-wide:hidden"
+          className="flex min-h-10 items-center gap-2 px-2 text-body-sm font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface voice-wide:hidden"
           aria-controls="mesh-voice-roster-drawer"
           aria-expanded={rosterOpen}
           aria-label="Open people list"
@@ -192,7 +192,7 @@ export function VoiceView({
         <button
           type="button"
           onClick={onBackToChat}
-          className="flex min-h-10 items-center gap-2 border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          className="flex min-h-10 items-center gap-2 border border-outline-variant px-3 text-body-sm font-semibold text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
           aria-label={`Open messages from ${channelName}`}
         >
           <Icon name="messageCircle" size="sm" />
@@ -201,7 +201,7 @@ export function VoiceView({
       </header>
 
       {microphonePermission === 'denied' ? (
-        <div className="flex flex-none items-center gap-2 border-b border-error-container-line bg-error-container px-4 py-2 text-body-sm text-error" role="alert">
+        <div className="flex flex-none items-center gap-2 border-b border-error-container-line bg-error-container px-4 py-2 text-body-sm text-on-error-container" role="alert">
           <Icon name="micOff" size="sm" aria-hidden="true" />
           <span className="min-w-0 flex-1">
             Mesh cannot use your microphone. Allow access in system settings.
@@ -217,7 +217,7 @@ export function VoiceView({
       ) : null}
 
       {connectionWarning ? (
-        <div className="flex flex-none items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-marker" role="status">
+        <div className="flex flex-none items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container" role="status">
           <Icon name="triangleAlert" size="sm" aria-hidden="true" />
           <span className="min-w-0 flex-1">
             <strong>Call audio needs attention.</strong> {connectionWarning}

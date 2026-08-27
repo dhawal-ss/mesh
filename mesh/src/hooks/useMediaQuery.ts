@@ -29,7 +29,15 @@ export function useMediaQuery(query: string): boolean {
 }
 
 /** The breakpoint below which room navigation collapses into a drawer. */
-export const COMPACT_VIEWPORT_QUERY = '(max-width: 799px)'
+/*
+ * The width below which the room list is a drawer rather than a column.
+ *
+ * It rises with the list: an M3 row is a 56px pill carrying a leading glyph, a
+ * headline and a trailing badge, so the list is 340px where it was 250px. At
+ * the 800px minimum window a docked list left the conversation 336px and the
+ * room name in the app bar truncated on its own title.
+ */
+export const COMPACT_VIEWPORT_QUERY = '(max-width: 999px)'
 
 /** The breakpoint below which room context is presented as a modal drawer. */
 export const ROOM_CONTEXT_COMPACT_QUERY = '(max-width: 1100px)'

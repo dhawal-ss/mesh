@@ -137,7 +137,7 @@ export function InviteModal({
         className="mesh-invite-section border-y border-outline-variant"
       >
         <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-primary">
+          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-on-primary-container">
             <Icon name="userPlus" size="sm" />
           </span>
           <div className="min-w-0">

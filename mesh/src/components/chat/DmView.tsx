@@ -166,7 +166,7 @@ function DmMessageBoundary({
           <button
             type="button"
             onClick={resetError}
-            className="min-h-8 rounded-full px-2 text-body-sm font-medium text-primary hover:bg-surface-container-high hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="min-h-8 rounded-full px-2 text-body-sm font-medium text-primary hover:bg-state-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             aria-label={`Retry message ${messageId}`}
           >
             Retry
@@ -294,7 +294,7 @@ function DmLanding() {
                 <button
                   key={conversation.id}
                   type="button"
-                  className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-surface-container-high"
+                  className="mesh-dm-landing-row flex w-full items-center gap-3 border-b border-outline-variant text-left hover:bg-state-hover"
                   onClick={() => openConversation(conversation.id)}
                   aria-label={`Open conversation with ${name}`}
                 >
@@ -1366,10 +1366,10 @@ export function DmView() {
               }}
               className={`flex min-h-8 items-center gap-1.5 rounded-full px-2 text-label-sm font-medium transition-colors ${
                 safetyOpen
-                  ? 'bg-secondary-container text-on-surface'
+                  ? 'bg-secondary-container text-on-secondary-container'
                   : trust.devicesNeedReview > 0 || trust.protection !== 'protected'
-                    ? 'bg-marker-container text-marker hover:bg-marker-container-hover'
-                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                    ? 'bg-marker-container text-on-marker-container hover:bg-marker-container-hover'
+                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
               }`}
               aria-controls="mesh-dm-safety-panel"
               aria-expanded={safetyOpen}
@@ -1399,7 +1399,7 @@ export function DmView() {
       ) : null}
 
       {matrixMode && !trust.loadingAccountTrust && trust.devicesNeedReview > 0 && (
-        <div className="flex min-h-10 items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 py-1.5 text-body-sm text-on-surface-variant">
+        <div className="flex min-h-10 items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 py-1.5 text-body-sm text-on-marker-container">
           <Icon
             name="triangleAlert"
             size="sm"
@@ -1412,7 +1412,7 @@ export function DmView() {
           <button
             type="button"
             onClick={(event) => openSecurityFrom(event.currentTarget)}
-            className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-marker hover:bg-marker-container-hover"
+            className="min-h-8 flex-shrink-0 rounded-full px-2 font-semibold text-on-marker-container hover:bg-marker-container-hover"
           >
             Review
           </button>
@@ -1422,12 +1422,12 @@ export function DmView() {
       {markReadError?.conversationId === activeConversationId && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
         >
           <span>This conversation could not be marked as read.</span>
           <button
             type="button"
-            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
             onClick={() => void markConversationRead(activeConversationId)}
           >
             Retry read status
@@ -1458,12 +1458,12 @@ export function DmView() {
       {olderLoadError !== null && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
         >
           <span>Earlier messages could not be loaded.</span>
           <button
             type="button"
-            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
             onClick={() => void requestOlderMessages()}
           >
             Retry earlier messages
@@ -1474,7 +1474,7 @@ export function DmView() {
       {searchContextLimited && (
         <div
           role="status"
-          className="border-b border-marker-container-line bg-marker-container px-4 py-2 text-center text-body-sm text-on-surface-variant"
+          className="border-b border-marker-container-line bg-marker-container px-4 py-2 text-center text-body-sm text-on-marker-container"
         >
           The surrounding messages could not be loaded.
         </div>
@@ -1501,12 +1501,12 @@ export function DmView() {
           <div className="flex h-full items-center justify-center px-4">
             <div
               role="alert"
-              className="max-w-sm rounded-xl border border-marker-container-line bg-marker-container p-4 text-center text-body-md text-on-surface-variant"
+              className="max-w-sm rounded-xl border border-marker-container-line bg-marker-container p-4 text-center text-body-md text-on-marker-container"
             >
               <p>Messages could not be loaded.</p>
               <button
                 type="button"
-                className="mt-3 min-h-8 rounded-full px-3 font-semibold text-primary hover:bg-surface-container-high"
+                className="mt-3 min-h-8 rounded-full px-3 font-semibold text-primary hover:bg-state-hover"
                 onClick={() => void loadMessages(activeConversationId)
                   .then(() => markConversationRead(activeConversationId))
                   .catch(() => {})}
@@ -1616,7 +1616,7 @@ export function DmView() {
                   type="button"
                   aria-disabled={isLoadingOlder || undefined}
                   onClick={() => void requestOlderMessages(messageLogRef.current ?? undefined)}
-                  className="min-h-control-sm rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="min-h-control-sm rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   Load earlier messages
                 </button>
@@ -1701,12 +1701,12 @@ export function DmView() {
       {loadFailed && visibleChannelMessages.length > 0 && (
         <div
           role="alert"
-          className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant"
+          className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container"
         >
           <span>Could not refresh messages.</span>
           <button
             type="button"
-            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
             onClick={() => void loadMessages(activeConversationId).catch(() => {})}
           >
             Retry
@@ -1715,21 +1715,21 @@ export function DmView() {
       )}
 
       {isBlocked && (
-        <div className="mx-4 mb-2 rounded-xl border border-error-container-line bg-error-container px-3 py-2 text-body-sm text-error">
+        <div className="mx-4 mb-2 rounded-xl border border-error-container-line bg-error-container px-3 py-2 text-body-sm text-on-error-container">
           Messages from this user are blocked. Unblock {peerName} to send a message.
         </div>
       )}
       {blockSafetyUnavailable && (
         <div
           role={blockStatus === 'failed' ? 'alert' : 'status'}
-          className="mx-4 mb-2 rounded-xl border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant"
+          className="mx-4 mb-2 rounded-xl border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container"
         >
           {blockStatus === 'failed' ? (
             <>
               <span>Sending is off until Mesh can check whether this account is blocked.</span>{' '}
               <button
                 type="button"
-                className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+                className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
                 onClick={() => {
                   if (!peerPublicKey) return
                   setBlockState({ peerPublicKey, status: 'loading', blocked: false })
@@ -1759,7 +1759,7 @@ export function DmView() {
               setReplyingTo(null)
               setThreadReplyRoot(null)
             }}
-            className="min-h-8 rounded-full px-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+            className="min-h-8 rounded-full px-2 text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
             aria-label="Cancel reply"
           >
             Cancel
@@ -1788,7 +1788,7 @@ export function DmView() {
         {sendingProtectionUnavailable && (
           <div
             role="status"
-            className="border-t border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
+            className="border-t border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
           >
             {trust.protection === 'checking'
               ? "Checking this conversation's protection before sending."
@@ -1903,7 +1903,7 @@ function DmThreadPanelLoadingFallback({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="min-h-10 rounded-full px-2 text-body-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          className="min-h-10 rounded-full px-2 text-body-sm font-medium text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
         >
           Close
         </button>

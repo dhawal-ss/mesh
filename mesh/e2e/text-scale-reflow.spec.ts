@@ -46,6 +46,14 @@ for (const viewport of VIEWPORTS) {
       await page.goto('/?dev=workspace')
       await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
       await page.getByRole('button', { name: /^Lantern Guild/ }).first().click()
+      /*
+        The room list is a drawer below 1000px. An M3 row is 340px wide, so at
+        the 800px minimum window a docked list would leave the conversation
+        336px; the list opens on demand there instead, and this is the same
+        control the narrow-shell specs use.
+      */
+      const openRoomNavigation = page.getByRole('button', { name: 'Open room navigation' })
+      if (await openRoomNavigation.isVisible()) await openRoomNavigation.click()
       await page.getByRole('button', { name: /Text room: concept-art/ }).click()
       await expect(page.getByRole('feed', { name: 'Messages in #concept-art' })).toBeVisible()
       await applyTextScale(page, scale)

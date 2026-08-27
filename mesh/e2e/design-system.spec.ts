@@ -5,8 +5,8 @@ const runtimeErrors = new WeakMap<Page, string[]>()
 
 /**
  * A semantic color reaches the page in one of two shapes: a hex alias such as
- * `--surface-canvas`, or the space-separated channels Tailwind composes with,
- * such as `--content-accent-rgb`. Which one survives to the browser depends on
+ * `--surface`, or the space-separated channels Tailwind composes with,
+ * such as `--primary-rgb`. Which one survives to the browser depends on
  * what consumes it, because the PostCSS pass prunes custom properties nothing
  * references. Accept either, and say so plainly when neither arrived, rather
  * than letting an absent token become a NaN ratio that reads like a contrast
@@ -146,12 +146,12 @@ test('renders every supported theme and exposes keyboard-operable primitives', a
 test('keeps semantic foregrounds and focus indicators contrast-safe in light theme', async ({ page }) => {
   const lightTheme = page.locator('section[data-theme="light"]')
   const names = [
-    'surface-canvas',
-    'content-accent',
-    'content-link',
+    'surface',
+    'primary',
+    'error',
+    'marker',
+    'on-surface-variant',
     'border-focus',
-    'status-success',
-    'status-warning',
   ]
   const tokens = await lightTheme.evaluate((element, tokenNames) => {
     const styles = getComputedStyle(element)
@@ -162,13 +162,16 @@ test('keeps semantic foregrounds and focus indicators contrast-safe in light the
   }, names)
 
   const color = (name: string) => readThemeColor(tokens, name)
-  const canvas = color('surface-canvas')
+  const surface = color('surface')
 
-  expect(contrastRatio(color('content-accent'), canvas)).toBeGreaterThanOrEqual(4.5)
-  expect(contrastRatio(color('content-link'), canvas)).toBeGreaterThanOrEqual(4.5)
-  expect(contrastRatio(color('status-success'), canvas)).toBeGreaterThanOrEqual(4.5)
-  expect(contrastRatio(color('status-warning'), canvas)).toBeGreaterThanOrEqual(4.5)
-  expect(contrastRatio(color('border-focus'), canvas)).toBeGreaterThanOrEqual(3)
+  // The three colour families, plus the supporting ink, against the ground
+  // they sit on. There is no success token to measure: green left the product,
+  // and a healthy state is silence.
+  expect(contrastRatio(color('primary'), surface)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(color('error'), surface)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(color('marker'), surface)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(color('on-surface-variant'), surface)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(color('border-focus'), surface)).toBeGreaterThanOrEqual(3)
   // This test used to end by pairing --content-on-avatar against --avatar-sand.
   // That pairing described avatars back when they drew initials over a filled
   // identity color. They now render an aria-hidden pixel mark whose color comes

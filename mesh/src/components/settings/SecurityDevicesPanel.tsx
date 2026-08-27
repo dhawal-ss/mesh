@@ -1136,7 +1136,7 @@ export function SecurityDevicesPanel({
         {error && (
           <p
             role="alert"
-            className="rounded-xl bg-error-container px-3 py-2 text-body-md text-error"
+            className="rounded-xl bg-error-container px-3 py-2 text-body-md text-on-error-container"
           >
             {error}
           </p>

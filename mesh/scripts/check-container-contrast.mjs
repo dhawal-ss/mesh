@@ -414,7 +414,20 @@ export function findBranchDisagreements(css) {
     const mixed = themeVariables(css, theme, { includeColorMix: true })
     const plain = themeVariables(css, theme, { includeColorMix: false })
     for (const tone of CONTAINER_TONES) {
-      for (const suffix of ['', '-hover', '-active', '-line']) {
+      /*
+        The two faces with a measured requirement, and only those.
+
+        A container is what text sits on and a line is the 3:1 boundary, so
+        both owe a number and both are declared in each theme with a fallback
+        beside their color-mix. A hover and a pressed face are transient states
+        nothing measures, and deriving them perceptually is the only way a
+        block that re-points --primary -- one of the six selectable accents --
+        can get a hover face that belongs to the colour somebody chose.
+        resolveColorMix refuses a mix of two opaque colours rather than
+        approximating one, so asking these two for branch agreement asks for a
+        fallback that cannot be written without hand-compositing every accent.
+      */
+      for (const suffix of ['', '-line']) {
         const token = `--${tone}-container${suffix}`
         const withMix = resolveColor(`var(${token})`, mixed)
         const withoutMix = resolveColor(`var(${token})`, plain)

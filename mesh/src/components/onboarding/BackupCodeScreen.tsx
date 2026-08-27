@@ -107,8 +107,8 @@ export function BackupCodeScreen({
           role="status"
           className={`rounded-xl border px-3 py-3 text-body-md ${
             secureStorageState === 'saved'
-              ? 'border-primary-container-line bg-primary-container text-on-surface-variant'
-              : 'border-marker-container-line bg-marker-container text-on-surface-variant'
+              ? 'border-primary-container-line bg-primary-container text-on-primary-container'
+              : 'border-marker-container-line bg-marker-container text-on-marker-container'
           }`}
         >
           {/*
@@ -228,7 +228,7 @@ export function BackupCodeScreen({
           {attempted && !complete && (
             <p
               role="alert"
-              className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-error"
+              className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-on-error-container"
             >
               Those parts do not match your saved copy.
             </p>

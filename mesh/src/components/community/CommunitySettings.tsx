@@ -620,7 +620,7 @@ export function CommunitySettings({
             >
               <div className="flex flex-col items-stretch gap-3 border-b border-outline-variant px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary-container text-primary">
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
                     <Icon name="squarePen" size="sm" />
                   </div>
                   <div>
@@ -630,7 +630,7 @@ export function CommunitySettings({
                 <div
                   className={`flex flex-shrink-0 self-start items-center gap-1.5 rounded-full border px-2.5 py-1 text-body-sm font-semibold ${
                     metadataDirty
-                      ? 'border-primary-container-line bg-primary-container text-primary'
+                      ? 'border-primary-container-line bg-primary-container text-on-primary-container'
                       : 'border-outline-variant bg-surface-container text-on-surface-variant'
                   }`}
                 >
@@ -831,7 +831,7 @@ export function CommunitySettings({
                 </div>
 
                 <div className="mt-2 flex items-start gap-3 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-2">
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary-container text-primary">
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
                     <Icon name="shieldCheck" size="sm" />
                   </div>
                   <div>
@@ -1017,7 +1017,7 @@ export function CommunitySettings({
                 </h3>
 
                 <div className="mt-4 flex items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
-                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-primary">
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-on-primary-container">
                     <Icon name="shieldCheck" size="sm" />
                   </span>
                   <div className="min-w-0">
@@ -1088,7 +1088,7 @@ export function CommunitySettings({
                   >
                     <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
                       <div className="mb-4 flex items-start gap-3">
-                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-primary">
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary-container text-on-primary-container">
                           <Icon name="plus" size="sm" />
                         </span>
                         <div className="min-w-0">
@@ -1301,7 +1301,7 @@ export function CommunitySettings({
             {matrixMode && isOwner ? (
               <div className="mt-4 rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-error-container text-error">
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-error-container text-on-error-container">
                     <Icon name="shieldCheck" size="sm" />
                   </span>
                   <div className="min-w-0">

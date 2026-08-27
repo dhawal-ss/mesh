@@ -110,10 +110,10 @@ export function VoiceDock() {
       <button
         type="button"
         onClick={openVoiceRoom}
-        className="mesh-voice-dock-room flex min-w-64 items-center gap-3 rounded-full px-2 py-1.5 text-left transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+        className="mesh-voice-dock-room flex min-w-64 items-center gap-3 rounded-full px-2 py-1.5 text-left transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
         aria-label={`Open voice room ${voiceChannel?.name ?? 'Voice'}`}
       >
-        <span className="mesh-voice-dock-room-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-primary-container-line bg-primary-container text-primary">
+        <span className="mesh-voice-dock-room-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-primary-container-line bg-primary-container text-on-primary-container">
           <Icon name="volume" size="sm" />
         </span>
         <span className="min-w-0">
@@ -179,7 +179,7 @@ export function VoiceDock() {
           <button
             type="button"
             onClick={retryVoice}
-            className="flex min-h-11 items-center gap-2 rounded-full px-3 text-body-sm font-semibold text-primary transition-colors hover:bg-surface-container-high"
+            className="flex min-h-11 items-center gap-2 rounded-full px-3 text-body-sm font-semibold text-primary transition-colors hover:bg-state-hover"
           >
             <Icon name="refresh" size="sm" />
             <span className="hidden sm:inline">Try again</span>
@@ -226,7 +226,7 @@ export function VoiceDock() {
         <button
           type="button"
           onClick={openVoiceRoom}
-          className="mesh-voice-dock-open hidden min-h-11 items-center gap-2 rounded-full px-3 text-body-sm font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface md:flex"
+          className="mesh-voice-dock-open hidden min-h-11 items-center gap-2 rounded-full px-3 text-body-sm font-semibold text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface md:flex"
           aria-label={`Open voice room ${voiceChannel?.name ?? 'Voice'}`}
         >
           <Icon name="panelRight" size="sm" />
@@ -235,7 +235,7 @@ export function VoiceDock() {
         <button
           type="button"
           onClick={leaveVoice}
-          className="flex min-h-11 items-center gap-2 rounded-full border border-error-container-line px-4 text-body-sm font-semibold text-error transition-colors hover:bg-error-container-hover"
+          className="flex min-h-11 items-center gap-2 rounded-full border border-error-container-line px-4 text-body-sm font-semibold text-on-error-container transition-colors hover:bg-error-container-hover"
           aria-label={`Leave ${voiceChannel?.name ?? 'voice'}`}
         >
           <Icon name="phoneOff" size="sm" />
@@ -268,8 +268,8 @@ function VoiceDockButton({
         aria-pressed={active}
         className={`flex min-h-11 items-center justify-center gap-2 rounded-full px-3 transition-colors ${
           active
-            ? 'bg-marker-container text-marker'
-            : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+            ? 'bg-marker-container text-on-marker-container'
+            : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
         }`}
       >
         <Icon name={icon} size="sm" />

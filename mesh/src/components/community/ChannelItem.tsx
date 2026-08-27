@@ -11,7 +11,6 @@ import { Icon } from '../ui/Icon'
 import { ContextMenu, DropdownMenu, type MenuItem } from '../ui/InteractivePrimitives'
 import { AnimatePresence, motion } from '../../lib/lazy-motion'
 import { variants } from '../../lib/motion'
-import { rowNumber } from '../ui/QuietStructure'
 
 export interface ChannelItemProps {
   channel: Channel
@@ -23,7 +22,6 @@ export interface ChannelItemProps {
    * stable thing to point at in a sentence and a jump target in the palette,
    * which is why it is derived here rather than stored anywhere.
    */
-  index: number
   matrixMode?: boolean
   active: boolean
   onClick: () => void
@@ -66,7 +64,6 @@ export interface ChannelItemProps {
 
 export function ChannelItem({
   channel,
-  index,
   matrixMode = false,
   active,
   onClick,
@@ -299,15 +296,14 @@ export function ChannelItem({
     The trailing value, in one place.
 
     A mention outranks an unread count, an unread count outranks a marked-unread
-    room, and a room with none of those shows nothing at all. The pill badge is
-    gone: this is a zero-padded mono count at the accent, right-aligned, so a
-    column of rooms reads as a column of numbers rather than a scatter of
-    lozenges at different widths.
+    room, and a room with none of those shows nothing at all. It is an M3 large
+    badge: a pill carrying the number, coral for a mention because a mention is
+    the one thing here that names you, and the neutral container otherwise.
   */
   const trailingCount = hasMentions
-    ? { value: unreadMentions > 99 ? '99+' : rowNumber(unreadMentions - 1), mention: true }
+    ? { value: unreadMentions > 99 ? '99+' : String(unreadMentions), mention: true }
     : hasUnread && unreadCount > 0
-      ? { value: unreadCount > 99 ? '99+' : rowNumber(unreadCount - 1), mention: false }
+      ? { value: unreadCount > 99 ? '99+' : String(unreadCount), mention: false }
       : null
 
   return (
@@ -326,38 +322,28 @@ export function ChannelItem({
         aria-label={`${channel.channelType === 'text' ? 'Text' : 'Voice'} room: ${channel.name}${joined ? '' : joining ? ', joining' : ', not joined yet'}${isPinned ? ', pinned' : ''}${isHidden ? ', hidden' : ''}${hasUnread ? `, ${unreadLabel}` : ''}${isMuted ? ', muted' : ''}${hasDraft ? ', unsent draft' : ''}${hasFailedMessages ? ', a message could not be sent' : ''}`}
         aria-current={active ? 'page' : undefined}
         /*
-          Active is a flat plane: square corners, full-bleed to both rules,
-          near-black ink. It does not hover, because it is already a plane, and
-          it carries aria-current above because a plane is a colour and a colour
-          is never the only channel.
+          A Material 3 one-line list item: a 56px pill, a 24px leading glyph, a
+          title-medium headline and a trailing badge. Selected is a
+          --secondary-container fill and `aria-current` above, because a fill is
+          a colour and a colour is never the only channel; hover and focus are
+          a state layer rather than a fill token of their own.
+
+          The row-number gutter is gone. A numeral said where a room was in a
+          list somebody can already see, and it cost 34px of the label's width
+          on every row; the type glyph says what a room is, which the numeral
+          never did.
         */
-        className={`mesh-channel-item flex min-h-shell-channel-row min-w-0 flex-1 items-center gap-1.5 rounded-full px-shell-gutter text-left transition-colors duration-instant ${
+        className={`mesh-channel-item flex min-h-shell-channel-row min-w-0 flex-1 items-center gap-3 rounded-full px-4 text-left transition-colors duration-instant ${
           active
-            ? 'mesh-channel-active bg-primary text-on-primary'
+            ? 'mesh-channel-active bg-secondary-container text-on-secondary-container'
             : hasUnread
               ? 'text-on-surface hover:bg-state-hover'
               : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
         }`}
       >
-        <span
-          aria-hidden="true"
-          className={`w-row-index flex-none text-label-sm font-semibold transition-colors duration-instant ${
-            active
-              ? 'text-on-primary'
-              : 'text-on-surface-variant group-hover:text-on-surface'
-          }`}
-        >
-          {rowNumber(index)}
-        </span>
-
-        {/*
-          The type glyph stays. The number says where a room is, not what it is,
-          and text and voice rooms are otherwise distinguishable only by the
-          accessible name.
-        */}
         <Icon
           name={channel.channelType === 'text' ? 'hash' : 'volume'}
-          size="xs"
+          size="md"
           className="flex-shrink-0"
         />
 
@@ -393,7 +379,7 @@ export function ChannelItem({
             name="pin"
             size="xs"
             aria-hidden="true"
-            className={`flex-shrink-0 ${active ? 'text-on-primary' : 'text-outline'}`}
+            className={`flex-shrink-0 ${active ? 'text-on-secondary-container' : 'text-outline'}`}
           />
         )}
 
@@ -407,7 +393,7 @@ export function ChannelItem({
             name="bellOff"
             size="xs"
             aria-hidden="true"
-            className={`ml-auto flex-shrink-0 ${active ? 'text-on-primary' : 'text-outline'}`}
+            className={`ml-auto flex-shrink-0 ${active ? 'text-on-secondary-container' : 'text-outline'}`}
           />
         )}
 
@@ -449,8 +435,10 @@ export function ChannelItem({
               initial="initial"
               animate="animate"
               exit="exit"
-              className={`badge-count flex origin-right items-center gap-0.5 text-label-sm font-semibold ${
-                trailingCount.mention ? 'text-error' : 'text-primary'
+              className={`badge-count flex h-4 min-w-4 origin-right items-center justify-center gap-0.5 rounded-full px-1 text-label-sm ${
+                trailingCount.mention
+                  ? 'bg-error text-on-error'
+                  : 'bg-surface-container-highest text-on-surface'
               } ${isMuted || hasDraft ? '' : 'ml-auto'}`}
             >
               {trailingCount.mention && <span aria-hidden="true">@</span>}
@@ -485,7 +473,7 @@ export function ChannelItem({
           <button
             type="button"
             className={`absolute right-1 flex min-h-8 w-8 flex-none items-center justify-center rounded-full opacity-0 transition-opacity hover:bg-state-pressed group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
-              active ? 'text-on-primary' : 'text-outline hover:text-on-surface'
+              active ? 'text-on-secondary-container' : 'text-outline hover:text-on-surface'
             }`}
             aria-label={`More actions for ${channel.name}`}
           >

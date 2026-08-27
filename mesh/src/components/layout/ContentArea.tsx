@@ -88,9 +88,9 @@ export function ContentArea() {
   const previousCompactRoomContext = useRef(compactRoomContext)
   const roomContextWidth = usePersistentPanelWidth({
     storageKey: ROOM_CONTEXT_WIDTH_KEY,
-    defaultWidth: 280,
-    minimum: 220,
-    maximum: 320,
+    defaultWidth: 400,
+    minimum: 320,
+    maximum: 480,
   })
   const [inviteDraft, setInviteDraft] = useState('')
   const [RoomContextPanel, setRoomContextPanel] = useState(
@@ -593,7 +593,7 @@ function ThreadPanelLoadingFallback({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="min-h-10 rounded-full px-2 text-body-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          className="min-h-10 rounded-full px-2 text-body-sm font-medium text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
         >
           Close
         </button>
@@ -636,7 +636,7 @@ function RoomContextLoadingFallback({
         </span>
         <button
           type="button"
-          className="min-h-11 min-w-11 rounded-full px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          className="min-h-11 min-w-11 rounded-full px-2 text-body-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           onClick={onClose}
         >
           Close
@@ -671,7 +671,7 @@ function FirstAction({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-full border border-outline-variant bg-surface-container p-3 text-body-md font-medium text-on-surface transition-colors hover:border-outline hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+      className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-full border border-outline-variant bg-surface-container p-3 text-body-md font-medium text-on-surface transition-colors hover:border-outline hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
     >
       <Icon name={icon} />
       {label}

@@ -42,7 +42,7 @@ import { shouldGroupMessage } from '../../lib/message-grouping'
 import type { RoomTrustSnapshot } from '../../hooks/useRoomTrust'
 import type { RoomContextTab } from '../community/RoomContextPanel'
 import { RoomTrustSummary } from './RoomTrustSummary'
-import { AmbientNote, Eyebrow } from '../ui/QuietStructure'
+import { AmbientNote } from '../ui/QuietStructure'
 import { serverReach } from '../../lib/trust'
 import { EmptyState } from '../ui/Primitives'
 import { ClipsView } from './ClipsView'
@@ -159,15 +159,6 @@ export function ChatView({
   const hiddenNewerCount = useMessageStore((state) => state.newerGapCount[channel.id] ?? 0)
   const queueStates = useMessageStore((state) => state.matrixQueueStates[channel.id])
   const matrixMode = bridge.isMatrixBackend()
-  /*
-    `topic` is a required `String` on the wire, so the real backend always sends
-    one. Read defensively anyway: a channel record that predates the field, or
-    any faked IPC layer, would otherwise throw inside render and take the whole
-    content area down through its error boundary. Quiet Structure's own copy
-    rule applies here too: a room with no topic gets no line, rather than a
-    generated stand-in sentence.
-  */
-  const roomDescription = (channel.topic ?? '').trim()
   const studioVoiceRoom = useChannelStore((state) =>
     state.channels.find(
       (candidate) =>
@@ -180,8 +171,6 @@ export function ChatView({
     ),
   )
   const currentVoiceChannelId = useVoiceStore((state) => state.currentChannelId)
-  const currentVoicePeers = useVoiceStore((state) => state.peers)
-  const matrixRtcMembersByRoom = useVoiceStore((state) => state.matrixRtcMembersByRoom)
   const setCurrentVoiceSession = useVoiceStore((state) => state.setCurrentVoiceSession)
   const route = useCurrentMeshRoute()
   const navigate = useMeshNavigationStore((state) => state.navigate)
@@ -192,32 +181,9 @@ export function ChatView({
   )
   const currentStudioParty = currentVoiceChannelId === studioVoiceRoom?.id
   const canOpenStudioVoice = voiceRoutesEnabled
-  const studioPartyOccupancy = studioVoiceRoom
-    ? currentStudioParty
-      ? Math.max(1, currentVoicePeers.length)
-      : matrixRtcMembersByRoom[studioVoiceRoom.id]?.length ?? 0
-    : 0
   const setCommunities = useCommunityStore((state) => state.setCommunities)
   const setActiveCommunity = useCommunityStore((state) => state.setActiveCommunity)
   const communityMembers = useCommunityMembers(channel.communityId)
-  /*
-    The header eyebrow.
-
-    Every clause is something this surface can actually answer, and a clause it
-    cannot answer is absent rather than filled with a plausible number. A call
-    in progress earns its own clause because it is the one thing on this screen
-    that is happening rather than merely true.
-  */
-  const onlineMemberCount = communityMembers.filter((member) => member.online).length
-  const roomEyebrow = [
-    channel.channelType === 'text' ? 'Open room' : 'Voice room',
-    communityMembers.length > 0 ? `${communityMembers.length} present` : null,
-    onlineMemberCount > 0 ? `${onlineMemberCount} online` : null,
-    studioPartyOccupancy > 0 && studioVoiceRoom
-      ? `${studioPartyOccupancy} in ${studioVoiceRoom.name}`
-      : null,
-  ].filter(Boolean).join(' \u00b7 ')
-
   /*
     The one ambient line this screen is allowed.
 
@@ -1888,24 +1854,46 @@ export function ChatView({
     <div className="mesh-chat-view flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div
         /*
-          The title gets a line to itself.
+          A Material 3 small top app bar: one 64px line carrying the room name,
+          the encryption chip and the actions.
 
-          At 56px a room name and a row of actions cannot share a line at the
-          1280 reference width without one of them truncating, and the one that
-          truncated was the room name. The eyebrow and the actions share the
-          top line instead, which is also where the mock puts them.
+          The 56px screen title is gone, and so is the two-line header it
+          needed. A poster-scale room name cost the conversation 112px of
+          height at the 1280 reference and forced a step-down rule at short
+          viewports; a title-large name fits beside its own actions on one line
+          at every width the shell supports.
         */
-        className="mesh-conversation-header mesh-conversation-title-header flex min-w-0 flex-shrink-0 flex-col gap-1.5 border-b border-rule border-outline-variant"
+        className="mesh-conversation-header flex h-conversation-header min-w-0 flex-shrink-0 items-center gap-3 px-shell-gutter"
         data-tauri-drag-region
       >
-        <div className="flex min-w-0 items-center justify-between gap-4">
-          {/*
-            The eyebrow states only what this surface can answer. A clause it
-            cannot answer is absent rather than filled with a plausible number.
-          */}
-          <Eyebrow className="min-w-0 truncate">{roomEyebrow}</Eyebrow>
+        <h1
+          className="mesh-room-title min-w-0 truncate text-title-lg text-on-surface outline-none"
+          data-mesh-route-heading
+          tabIndex={-1}
+        >
+          {channel.name}
+        </h1>
+        {/*
+          Only a room being read in a non-default shape says so. A room read
+          the ordinary way carries no chip at all, so this is chrome that
+          exists exactly when there is state to explain, and it is the way
+          back as well as the label: finding a context menu to undo something
+          you can see is the wrong shape of fix.
+        */}
+        {roomShape !== 'conversation' && (
+          <button
+            type="button"
+            data-room-shape-chip
+            onClick={() => setRoomShape(channel.id, 'conversation')}
+            aria-label={`Reading ${channel.name} as ${roomShape}. Go back to the conversation.`}
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-sm border border-outline px-2 py-1 text-label-lg text-on-surface-variant hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+          >
+            <Icon name={roomShape === 'event' ? 'calendar' : 'image'} size="sm" />
+            {roomShape === 'event' ? 'Event' : 'Clips'}
+          </button>
+        )}
 
-          <div className="flex min-w-0 flex-shrink-0 items-center gap-1">
+        <div className="ml-auto flex min-w-0 flex-shrink-0 items-center gap-1">
           {matrixMode && trust && onOpenContext && (
             <RoomTrustSummary trust={trust} onOpenContext={onOpenContext} />
           )}
@@ -1919,10 +1907,17 @@ export function ChatView({
                 onClick={() => onOpenContext('pins')}
                 aria-label="Show pinned messages"
                 aria-pressed={Boolean(isContextOpen && activeContextTab === 'pins')}
-                className={`flex h-8 items-center gap-1.5 rounded-full px-2 text-body-sm font-medium transition-colors ${
+                /*
+                  A Material 3 app bar keeps at most three trailing actions on
+                  a compact window. Pins is the one that goes: the pinned tab
+                  is a tab of the details sheet the next button opens, so
+                  nothing becomes unreachable, and at 320px the room name was
+                  down to 48px with this button on the line.
+                */
+                className={`hidden h-8 items-center gap-1.5 rounded-full px-2 text-body-sm font-medium transition-colors sm:flex ${
                   isContextOpen && activeContextTab === 'pins'
-                    ? 'bg-secondary-container text-on-surface'
-                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant'
+                    ? 'bg-secondary-container text-on-secondary-container'
+                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface-variant'
                 }`}
               >
                 <Icon name="pin" size="sm" />
@@ -1948,8 +1943,8 @@ export function ChatView({
                 aria-expanded={isContextOpen}
                 className={`flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-body-sm font-medium transition-colors ${
                   isContextOpen && activeContextTab === 'people'
-                    ? 'bg-secondary-container text-on-surface'
-                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface-variant'
+                    ? 'bg-secondary-container text-on-secondary-container'
+                    : 'text-on-surface-variant hover:bg-state-hover hover:text-on-surface-variant'
                 }`}
               >
                 <Icon name="panelRight" size="sm" />
@@ -1978,48 +1973,6 @@ export function ChatView({
               <Icon name="volume" size="sm" />
               {currentStudioParty ? 'Open' : 'Join'} {studioVoiceRoom.name}
             </button>
-          )}
-          </div>
-        </div>
-
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1
-            className="mesh-room-title min-w-0 truncate text-headline-lg font-semibold text-on-surface outline-none"
-            data-mesh-route-heading
-            tabIndex={-1}
-          >
-            {channel.name}
-          </h1>
-          {/*
-            Only a room being read in a non-default shape says so. A room read
-            the ordinary way carries no chip at all, so this is chrome that
-            exists exactly when there is state to explain, and it is the way
-            back as well as the label: finding a context menu to undo something
-            you can see is the wrong shape of fix.
-          */}
-          {roomShape !== 'conversation' && (
-            <button
-              type="button"
-              data-room-shape-chip
-              onClick={() => setRoomShape(channel.id, 'conversation')}
-              aria-label={`Reading ${channel.name} as ${roomShape}. Go back to the conversation.`}
-              className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-outline-variant px-2 py-0.5 text-body-sm lowercase tracking-label-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-            >
-              <Icon name={roomShape === 'event' ? 'calendar' : 'image'} size="xs" />
-              {roomShape === 'event' ? 'Event' : 'Clips'}
-            </button>
-          )}
-          {/*
-            The room's own description, or nothing. Every room without one gets
-            the same generic sentence elsewhere in the product, so the slot a
-            reader checks to learn what this room is about would answer with
-            what all of them are for. An unwritten topic is information too: it
-            says nobody has decided yet, and a stand-in hides that.
-          */}
-          {roomDescription && (
-            <span className="hidden min-w-0 truncate text-body-sm text-on-surface-variant lg:block">
-              {roomDescription}
-            </span>
           )}
         </div>
       </div>
@@ -2055,7 +2008,7 @@ export function ChatView({
           aria-live="polite"
           aria-label={`${trust.devicesNeedReview} ${trust.devicesNeedReview === 1 ? 'device needs' : 'devices need'} review. Open the room ledger.`}
           data-notice-tone="warning"
-          className="flex min-h-control-md flex-shrink-0 items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 text-left text-body-sm text-marker transition-colors hover:bg-marker-container-hover"
+          className="flex min-h-control-md flex-shrink-0 items-center gap-2 border-b border-marker-container-line bg-marker-container px-4 text-left text-body-sm text-on-marker-container transition-colors hover:bg-marker-container-hover"
           onClick={() => onOpenContext?.('ledger')}
         >
           <Icon name="triangleAlert" size="sm" />
@@ -2070,12 +2023,12 @@ export function ChatView({
         <div
           role="alert"
           data-notice-tone="warning"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
         >
           <span>{activeRoomUpgradeError}</span>
           <button
             type="button"
-            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
             onClick={() => setRoomUpgradeAttempt((attempt) => attempt + 1)}
           >
             Retry room status
@@ -2087,12 +2040,12 @@ export function ChatView({
         <div
           role="alert"
           data-notice-tone="warning"
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
         >
           <span>This room could not be marked as read.</span>
           <button
             type="button"
-            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+            className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
             onClick={() => void markChannelSeen().catch(() => {})}
           >
             Retry read status
@@ -2173,12 +2126,12 @@ export function ChatView({
               <div
                 role="alert"
                 data-notice-tone="warning"
-                className="max-w-sm rounded-xl border border-marker-container-line bg-marker-container p-4 text-center text-body-md text-on-surface-variant"
+                className="max-w-sm rounded-xl border border-marker-container-line bg-marker-container p-4 text-center text-body-md text-on-marker-container"
               >
                 <p>Messages could not be loaded.</p>
                 <button
                   type="button"
-                  className="mt-3 min-h-8 rounded-full px-3 font-semibold text-primary hover:bg-surface-container-high"
+                  className="mt-3 min-h-8 rounded-full px-3 font-semibold text-primary hover:bg-state-hover"
                   onClick={() => void loadLatestMessages().catch(() => {})}
                 >
                   Retry messages
@@ -2294,7 +2247,7 @@ export function ChatView({
                     type="button"
                     aria-disabled={isLoadingOlder || undefined}
                     onClick={() => void loadOlderHistory(messageLogRef.current)}
-                    className="min-h-control-sm rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="min-h-control-sm rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     Load earlier messages
                   </button>
@@ -2431,7 +2384,7 @@ export function ChatView({
             <span>Could not refresh messages.</span>
             <button
               type="button"
-              className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+              className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
               onClick={() => void loadLatestMessages().catch(() => {})}
             >
               Retry
@@ -2511,7 +2464,7 @@ export function ChatView({
             <div
               role="status"
               data-notice-tone="warning"
-              className="border-t border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface-variant"
+              className="border-t border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
             >
               {trust?.protection === 'checking'
                 ? "Checking this room's protection before sending."
@@ -2760,7 +2713,7 @@ const VirtualMessageRow = memo(function VirtualMessageRow({
             <button
               type="button"
               onClick={resetError}
-              className="min-h-8 shrink-0 rounded-full px-2 text-body-sm font-medium text-primary transition-colors hover:bg-surface-container-high hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-8 shrink-0 rounded-full px-2 text-body-sm font-medium text-primary transition-colors hover:bg-state-hover hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Try again
             </button>

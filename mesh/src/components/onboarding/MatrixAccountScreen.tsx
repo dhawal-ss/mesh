@@ -816,7 +816,7 @@ export function MatrixAccountScreen({
       ref={errorSummaryRef}
       role="alert"
       tabIndex={-1}
-      className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-error"
+      className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-on-error-container"
     >
       <p>{error}</p>
       {signalCheckEnabled && errorDetails ? (
@@ -835,7 +835,7 @@ export function MatrixAccountScreen({
   const noticeRegion = continuationNotice ? (
     <div
       role="alert"
-      className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant"
+      className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container"
     >
       {continuationNotice}
     </div>
@@ -928,7 +928,7 @@ export function MatrixAccountScreen({
           </ExternalLink>
           <button
             type="button"
-            className="min-h-8 rounded-full px-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="min-h-8 rounded-full px-2 text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={cancelExternalRegistration}
           >
             Cancel
@@ -1171,7 +1171,7 @@ export function MatrixAccountScreen({
       {savedSignInNotice ? (
         <p
           role="status"
-          className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-md text-on-surface-variant"
+          className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-md text-on-marker-container"
         >
           {savedSignInNotice}
         </p>
@@ -1210,7 +1210,7 @@ export function MatrixAccountScreen({
               key={account.profileId}
               type="button"
               disabled={submitting || switchingProfile !== null}
-              className="flex w-full items-center justify-between gap-3 rounded-full bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-container-high disabled:cursor-wait disabled:opacity-60"
+              className="flex w-full items-center justify-between gap-3 rounded-full bg-surface px-3 py-2 text-left transition-colors hover:bg-state-hover disabled:cursor-wait disabled:opacity-60"
               onClick={() => void switchAccount(account.profileId)}
             >
               <span className="min-w-0">
@@ -1254,7 +1254,7 @@ export function MatrixAccountScreen({
           hint={usernameHint}
         />
         {!isCreate && accountIdBelongsElsewhere && !isAdvanced ? (
-          <p className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-surface-variant">
+          <p className="rounded-full border border-marker-container-line bg-marker-container px-3 py-2 text-body-sm text-on-marker-container">
             This account belongs to <span className="font-medium text-on-surface">{accountIdService}</span>.
             Go back and choose{' '}
             <span className="font-medium text-on-surface">My service is not listed</span>.
@@ -1394,7 +1394,7 @@ export function MatrixAccountScreen({
       </div>
 
       {!isCreate && capabilities && !capabilities.passwordLogin && !capabilities.browserLogin ? (
-        <p role="alert" className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-error">
+        <p role="alert" className="rounded-full border border-error-container-line bg-error-container px-3 py-2 text-body-md text-on-error-container">
           This service does not offer a sign-in method that Mesh can use.
         </p>
       ) : null}
@@ -1557,7 +1557,7 @@ export function MatrixAccountScreen({
           Already have an account with this service?{' '}
           <button
             type="button"
-            className="inline-flex min-h-8 items-center rounded-full px-1 text-primary transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="inline-flex min-h-8 items-center rounded-full px-1 text-primary transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={() => changeMode('sign-in')}
           >
             Sign in
@@ -1567,7 +1567,7 @@ export function MatrixAccountScreen({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant pt-2 text-body-sm">
           <button
             type="button"
-            className="inline-flex min-h-8 items-center rounded-full px-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="inline-flex min-h-8 items-center rounded-full px-2 text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={() => changeMode('select')}
           >
             Back
@@ -1699,7 +1699,7 @@ function SavedAccounts({
           key={account.profileId}
           type="button"
           disabled={disabled || switchingProfile !== null}
-          className="flex w-full items-center justify-between gap-3 rounded-full bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-container-high disabled:cursor-wait disabled:opacity-60"
+          className="flex w-full items-center justify-between gap-3 rounded-full bg-surface px-3 py-2 text-left transition-colors hover:bg-state-hover disabled:cursor-wait disabled:opacity-60"
           onClick={() => onSelect(account.profileId)}
         >
           <span className="min-w-0">
@@ -1759,7 +1759,7 @@ function ServiceRow({
   privacyUrl?: string
 }) {
   const label = `${action === 'create' ? 'Create account with' : 'Sign in with'} ${title}`
-  const rowClass = 'group flex w-full items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
+  const rowClass = 'group flex w-full items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
   const body = (
     <>
       <span className="min-w-0 flex-1">

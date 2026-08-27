@@ -121,8 +121,8 @@ export function EventView({
                 */
                 className={`flex min-h-9 items-center gap-2 rounded-xl border border-outline px-3 text-body-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${
                   chosen
-                    ? 'border-l-bar border-l-primary bg-secondary-container text-on-surface'
-                    : 'border-l-bar border-l-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                    ? 'border-l-bar border-l-primary bg-secondary-container text-on-secondary-container'
+                    : 'border-l-bar border-l-transparent text-on-surface-variant hover:bg-state-hover hover:text-on-surface'
                 }`}
               >
                 <span aria-hidden="true">{reply.emoji}</span>

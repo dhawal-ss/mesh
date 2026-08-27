@@ -19,7 +19,7 @@ export function RoomTrustSummary({
       <Tooltip content="People in this community" side="bottom">
         <button
           type="button"
-          className="mesh-trust-summary flex min-h-8 max-w-full items-center gap-1.5 rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant"
+          className="mesh-trust-summary flex min-h-8 max-w-full items-center gap-1.5 rounded-full px-2 text-label-sm font-medium text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant"
           aria-label={`${memberLabel}. Open people in room details.`}
           onClick={() => onOpenContext('people')}
         >
@@ -40,7 +40,7 @@ export function RoomTrustSummary({
         type="button"
         className={`mesh-trust-summary flex min-h-8 max-w-full items-center gap-1.5 rounded-full px-2 text-label-sm font-medium transition-colors ${
           trust.protection === 'unencrypted' || devicesNeedReview
-            ? 'bg-marker-container text-marker hover:bg-marker-container-hover'
+            ? 'bg-marker-container text-on-marker-container hover:bg-marker-container-hover'
             : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface-variant'
         }`}
         aria-label={`${label}. Open connection check.`}

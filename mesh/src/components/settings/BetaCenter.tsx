@@ -15,7 +15,7 @@ import {
   type BetaFeedbackKind,
 } from '../../lib/beta-release'
 
-const linkClass = 'inline-flex min-h-10 items-center rounded-full px-3 text-body-md font-semibold text-primary underline underline-offset-2 hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
+const linkClass = 'inline-flex min-h-10 items-center rounded-full px-3 text-body-md font-semibold text-on-primary-container underline underline-offset-2 hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
 
 export function BetaInfoPanel({
   onOpenFeedback,
@@ -35,7 +35,7 @@ export function BetaInfoPanel({
               Version {MESH_APP_VERSION}
             </p>
           </div>
-          <span className="mesh-beta-badge rounded-full bg-primary-container px-2.5 py-1 text-label-sm font-semibold text-primary">
+          <span className="mesh-beta-badge rounded-full bg-primary-container px-2.5 py-1 text-label-sm font-semibold text-on-primary-container">
             Beta
           </span>
         </div>

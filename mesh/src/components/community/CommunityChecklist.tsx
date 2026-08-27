@@ -183,7 +183,7 @@ export function CommunityChecklist({
                   <button
                     type="button"
                     onClick={() => onStepAction(step.id)}
-                    className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-full px-1 text-body-sm font-semibold text-primary transition-[background-color] duration-fast hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-full px-1 text-body-sm font-semibold text-on-primary-container transition-[background-color] duration-fast hover:bg-primary-container-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     {step.action}
                     <Icon name="arrowRight" size="xs" />

@@ -156,7 +156,7 @@ export function IdentityScreen({ onGenerateIdentity, onNext }: IdentityScreenPro
         <button
           type="button"
           onClick={() => setAttempt((value) => value + 1)}
-          className="min-h-8 rounded-full px-2 text-body-md text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          className="min-h-8 rounded-full px-2 text-body-md text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface"
         >
           Try account setup again
         </button>

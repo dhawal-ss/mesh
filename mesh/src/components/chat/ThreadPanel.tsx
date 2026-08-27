@@ -110,7 +110,7 @@ export function ThreadPanel({
                 .then(() => showToast('Thread link copied.', 'success'))
                 .catch(() => showToast('Could not copy this thread link.', 'error'))
             }}
-            className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
             aria-label="Copy thread link"
           >
             <Icon name="messageCircle" size="sm" />
@@ -119,7 +119,7 @@ export function ThreadPanel({
         <button
           type="button"
           onClick={onClose}
-          className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          className="flex min-h-10 min-w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
           aria-label="Close thread"
         >
           <Icon name="x" size="sm" />
@@ -170,7 +170,7 @@ export function ThreadPanel({
             <button
               type="button"
               onClick={() => onReply(root)}
-              className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+              className="min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
             >
               Reply in thread
             </button>
@@ -219,7 +219,7 @@ export function ThreadPanel({
               <button
                 type="button"
                 onClick={onRetry}
-                className="mt-3 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-surface-container-high"
+                className="mt-3 min-h-8 rounded-full px-2 font-semibold text-primary hover:bg-state-hover"
               >
                 Try again
               </button>

@@ -1039,7 +1039,7 @@ function MessageInputContent({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => applyFormatting(format)}
               disabled={disabled || isUploading || isStaging}
-              className={`flex h-control-sm min-w-control-sm items-center justify-center rounded-full px-1.5 text-body-md text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${glyphClass}`}
+              className={`flex h-control-sm min-w-control-sm items-center justify-center rounded-full px-1.5 text-body-md text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40 ${glyphClass}`}
             >
               {glyph}
             </button>
@@ -1078,7 +1078,7 @@ function MessageInputContent({
                     pendingSelectionRef.current = { start: nextCursor, end: nextCursor }
                   }}
                   className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-body-md transition-colors ${
-                    index === activeSlashIndex ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high'
+                    index === activeSlashIndex ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:bg-state-hover'
                   }`}
                 >
                   <span className="font-medium">{command.command}</span>
@@ -1109,7 +1109,7 @@ function MessageInputContent({
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectMention(suggestion)}
                     className={`flex min-h-control-md w-full items-center gap-3 px-3 py-2 text-left text-body-md transition-colors ${
-                      index === activeMentionIndex ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high'
+                      index === activeMentionIndex ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:bg-state-hover'
                     }`}
                   >
                     <span className="truncate font-medium">
@@ -1236,7 +1236,7 @@ function MessageInputContent({
                 disabled={disabled || isUploading || isStaging}
                 aria-label="Open emoji picker"
                 aria-expanded={emojiPickerOpen}
-                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
+                className="mb-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Icon name="smile" />
               </button>
@@ -1305,7 +1305,7 @@ function MessageInputContent({
             <button
               type="button"
               onClick={retryDraftSync}
-              className="min-h-control-sm rounded-full px-2 font-medium text-primary transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="min-h-control-sm rounded-full px-2 font-medium text-primary transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               Retry
             </button>

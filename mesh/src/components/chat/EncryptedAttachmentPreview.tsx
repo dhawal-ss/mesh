@@ -127,7 +127,7 @@ function clampAspectRatio(width: number, height: number): number {
 
 /** Shared by the two notices that offer a load, so the strings live once. */
 const NOTICE_BUTTON_CLASS =
-  'inline-flex min-h-control-sm items-center gap-1.5 rounded-full bg-surface-container-highest px-2 font-medium text-on-surface transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
+  'inline-flex min-h-control-sm items-center gap-1.5 rounded-full bg-surface-container-highest px-2 font-medium text-on-surface transition-colors hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus'
 
 type PreviewPhase = 'loading' | 'ready' | 'failed'
 /** Why a preview is waiting for a tap instead of loading on its own. */

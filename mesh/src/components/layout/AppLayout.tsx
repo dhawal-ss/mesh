@@ -94,7 +94,7 @@ export function QueuedMessageSyncNotice({
   return (
     <div
       role={failed ? 'alert' : 'status'}
-      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-center text-body-sm text-on-surface"
+      className="mesh-shell-notice flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-marker-container px-4 py-2 text-center text-body-sm text-on-marker-container"
     >
       <span>
         {failed
@@ -205,9 +205,14 @@ const CONNECTION_BAND_COPY: Record<DegradedConnectionPhase, ConnectionBandCopy> 
   },
 }
 
+/*
+ * The band is a tonal container, so it carries the paired ink for its whole
+ * subtree rather than tinting one word inside a neutral strip. Amber is
+ * transient; coral cannot clear without the person.
+ */
 const connectionBandLeadTone: Record<'marker' | 'danger', string> = {
-  marker: 'text-on-marker-container',
-  danger: 'text-on-error-container',
+  marker: 'bg-marker-container text-on-marker-container',
+  danger: 'bg-error-container text-on-error-container',
 }
 
 /**
@@ -308,16 +313,16 @@ export function ConnectionBand({
         band out again every time that happened. The one polite announcement
         lives in the shell's permanent status region instead.
       */
-      className="mesh-notice-band flex flex-shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-body-sm text-on-surface"
+      className={`mesh-connection-band mesh-shell-notice flex flex-shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-center text-body-sm ${connectionBandLeadTone[copy.tone]}`}
     >
-      <Icon name={copy.icon} size="sm" className={`flex-shrink-0 ${connectionBandLeadTone[copy.tone]}`} />
+      <Icon name={copy.icon} size="sm" className="flex-shrink-0" />
       <span className="min-w-0">
-        <span className={`font-semibold ${connectionBandLeadTone[copy.tone]}`}>{copy.lead}</span>{' '}
+        <span className="font-semibold">{copy.lead}</span>{' '}
         {copy.detail}
         {retryFailed ? ' That did not work.' : ''}
       </span>
       <Button
-        variant="ghost"
+        variant="text"
         tone={copy.tone}
         size="sm"
         loading={retrying}
@@ -394,14 +399,15 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
   const setFeedbackOpen = useShellStore((state) => state.setFeedbackOpen)
   const contextSidebarWidth = usePersistentPanelWidth({
     storageKey: CONTEXT_SIDEBAR_WIDTH_KEY,
-    defaultWidth: 250,
+    defaultWidth: 340,
     /*
-      The floor rises with the design. A Quiet Structure list row is a 34px
-      numeral gutter, a label and a trailing count, and at the old 208px floor
-      the label had 120px to live in and truncated on almost every room name.
+      The floor rises with the design again. An M3 list row is a 56px pill
+      carrying a 24px leading glyph, a title-medium headline and a trailing
+      badge, and the two-line variant adds supporting text under it; at the old
+      226px floor the headline had 150px and truncated on most room names.
     */
-    minimum: 226,
-    maximum: 320,
+    minimum: 300,
+    maximum: 420,
   })
 
   const myPublicKey = useIdentityStore((state) => state.identity?.publicKey)
@@ -476,7 +482,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
   const contextNavigationRef = useRef<HTMLDivElement>(null)
   const activeRoomId = isDmMode ? activeConversationId : activeChannelId
   /*
-   * The navigation drawer only exists below 800px. Deriving "is the drawer
+   * The navigation drawer only exists below 1000px. Deriving "is the drawer
    * actually a drawer right now" from the media query: rather than latching it
    * when the drawer opened: fixes a keyboard trap: widening the window used to
    * leave the Tab cycle and `aria-modal` installed on a sidebar that had
@@ -883,7 +889,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       {backupReminderDue && (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
+          className="mesh-shell-notice flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
         >
           <span>Keep access to your protected messages. Finish setup in Your devices.</span>
           <button
@@ -912,7 +918,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       {notificationSync.notificationModeFailureCount > 0 && (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-marker-container-line bg-marker-container px-4 py-2 text-body-sm text-on-surface"
+          className="mesh-shell-notice flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-marker-container px-4 py-2 text-body-sm text-on-marker-container"
         >
           <span>
             Mesh could not refresh notification choices for{' '}
@@ -931,7 +937,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       )}
       <div className="mesh-workspace-frame flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav
-          className="mesh-community-rail flex min-h-0 flex-shrink-0 flex-col items-center overflow-y-auto border-r border-rule border-outline-variant bg-surface-container-lowest pt-2"
+          className="mesh-community-rail flex min-h-0 flex-shrink-0 flex-col items-center overflow-y-auto pt-2"
           aria-label="Communities and direct messages"
           data-mesh-region
           tabIndex={-1}
@@ -946,7 +952,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
           <div className="mt-auto flex flex-col items-center gap-1 pb-3">
             <button
               type="button"
-              className="flex h-11 w-11 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               aria-label="Send beta feedback"
               onClick={() => setFeedbackOpen(true)}
             >
@@ -977,7 +983,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
           ref={contextNavigationRef}
           id="mesh-context-sidebar"
           data-open={contextNavigationOpen ? 'true' : 'false'}
-          className="mesh-context-sidebar relative flex min-h-0 flex-shrink-0 flex-col border-r border-rule border-outline-variant bg-surface-container-low"
+          className="mesh-context-sidebar relative flex min-h-0 flex-shrink-0 flex-col"
           data-design-token-exception="user-resizable-persisted-context-sidebar-width"
           style={{
             '--mesh-context-sidebar-width': `${contextSidebarWidth.width}px`,
@@ -992,13 +998,13 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
           aria-modal={drawerActive || undefined}
         >
           {drawerActive && (
-            <div className="flex min-h-11 flex-shrink-0 items-center justify-between border-b border-rule border-outline-variant px-2">
+            <div className="flex min-h-11 flex-shrink-0 items-center justify-between px-2">
               <span className="min-w-0 truncate px-2 text-body-md font-semibold text-on-surface-variant">
                 {directRouteActive && directMessagesAvailable ? 'Conversations' : 'Rooms'}
               </span>
               <button
                 type="button"
-                className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface-variant"
+                className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-state-hover hover:text-on-surface-variant"
                 aria-label={directRouteActive ? 'Close conversation navigation drawer' : 'Close room navigation drawer'}
                 onClick={() => closeNavigationDrawer()}
               >
@@ -1010,8 +1016,8 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
             label="Resize room navigation"
             side="right"
             value={contextSidebarWidth.width}
-            minimum={226}
-            maximum={320}
+            minimum={300}
+            maximum={420}
             onPointerDown={contextSidebarWidth.startResize}
             onResizeBy={contextSidebarWidth.resizeBy}
           />
@@ -1028,14 +1034,14 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
         <main
           id="mesh-conversation"
           tabIndex={-1}
-          className="mesh-workspace-main flex min-h-0 min-w-0 flex-1 flex-col bg-surface outline-none"
+          className="mesh-workspace-main flex min-h-0 min-w-0 flex-1 flex-col outline-none"
           aria-label={activeConversationLabel}
           data-mesh-region
         >
           {roomNavigationVisible && <div className="mesh-compact-header">
             <button
               type="button"
-              className="flex h-8 items-center gap-2 rounded-full px-2 text-body-md font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+              className="flex h-8 items-center gap-2 rounded-full px-2 text-body-md font-medium text-on-surface-variant hover:bg-state-hover hover:text-on-surface"
               aria-controls="mesh-context-sidebar"
               aria-expanded={contextNavigationOpen}
               aria-label={
@@ -1088,7 +1094,7 @@ export function AppLayout({ onSignInRequired }: { onSignInRequired: () => void }
       </div>
       {voiceRoutesEnabled && <VoiceAudioSink />}
       {voiceRoutesEnabled && <div className="mesh-party-strip-row flex flex-shrink-0">
-        <div className="mesh-shell-strip-rail-spacer flex-shrink-0 border-r border-rule border-outline-variant bg-surface-container-lowest" aria-hidden="true" />
+        <div className="mesh-shell-strip-rail-spacer flex-shrink-0" aria-hidden="true" />
         <VoiceDock />
       </div>}
       {!roomNavigationVisible && <UserPanel controls={false} />}

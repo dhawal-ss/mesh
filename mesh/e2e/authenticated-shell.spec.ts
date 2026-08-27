@@ -921,7 +921,7 @@ test.describe('authenticated desktop shell', () => {
     const geometry = await page.evaluate(() => {
       const roomNavigation = document.querySelector<HTMLElement>('.mesh-context-sidebar')!
       const roomContext = document.querySelector<HTMLElement>('.mesh-room-context-panel')!
-      const title = document.querySelector<HTMLElement>('.mesh-conversation-title-header h1')!
+      const title = document.querySelector<HTMLElement>('.mesh-conversation-header h1')!
       const composer = document.querySelector<HTMLElement>('.mesh-composer')!
       return {
         roomNavigationWidth: roomNavigation.getBoundingClientRect().width,
@@ -934,13 +934,18 @@ test.describe('authenticated desktop shell', () => {
     })
 
     /*
-      Quiet Structure's columns, not Indie Workshop's. The room list is 250px
-      because a row is a 34px numeral gutter, a label and a trailing count, and
-      the roster is 226px. Both are the contracted widths at the 1280 reference
-      and both are what --shell-channel-width and --shell-roster-width declare.
+      Material 3's columns. The list is 340px because an M3 row is a 56px pill
+      carrying a 24px leading glyph, a title-medium headline and a trailing
+      badge, and the roster is 400px as a side sheet.
+
+      At 1280 the roster does not dock: the rail, the list and the roster plus
+      four 12px pane gaps are 876px of chrome, which would leave the
+      conversation 404px. Below 1600 the roster is a sheet over the
+      conversation, so the composer keeps its width and the roster keeps its
+      own -- which is what these two bounds check.
     */
-    expect(geometry.roomNavigationWidth).toBeLessThanOrEqual(250)
-    expect(geometry.roomContextWidth).toBeLessThanOrEqual(226)
+    expect(geometry.roomNavigationWidth).toBeLessThanOrEqual(340)
+    expect(geometry.roomContextWidth).toBeLessThanOrEqual(400)
     expect(geometry.titleWidth).toBeGreaterThan(56)
     expect(geometry.titleClipped).toBe(false)
     expect(geometry.composerWidth).toBeGreaterThan(480)
@@ -1374,7 +1379,7 @@ test.describe('authenticated narrow shell', () => {
         const trustLabel = header.querySelector<HTMLElement>('.mesh-trust-summary span')
         return {
           header: { left: bounds.left, right: bounds.right },
-          title: { left: titleBounds.left, right: titleBounds.right, top: titleBounds.top },
+          title: { left: titleBounds.left, right: titleBounds.right, top: titleBounds.top, width: titleBounds.width },
           actions,
           trustLabelVisible: trustLabel ? getComputedStyle(trustLabel).display !== 'none' : null,
         }
@@ -1382,17 +1387,20 @@ test.describe('authenticated narrow shell', () => {
       expect(headerLayout.title.left, `${scenario.label} room title starts inside header`)
         .toBeGreaterThanOrEqual(headerLayout.header.left - 0.5)
       /*
-        The title clears the actions vertically, not horizontally.
+        The title clears the actions horizontally again.
 
-        A 56px room name and a row of actions cannot share a line at the 1280
-        reference width without one of them truncating, and the one that
-        truncated was the room name. The actions take the top line with the
-        eyebrow and the title has the second line to itself, so the invariant
-        this asserts -- they never collide -- is now a vertical relationship.
+        A Material 3 small top app bar is one 64px line: the title-large room
+        name, then the actions, and the name truncates rather than pushing them
+        off the end. The 56px screen title that needed a line of its own is
+        gone, so the invariant this asserts -- they never collide -- is a
+        horizontal relationship once more, plus a floor on what is left of the
+        name after the actions have taken their share.
       */
-      const lowestAction = Math.max(...headerLayout.actions.map((action) => action.bottom))
-      expect(headerLayout.title.top, `${scenario.label} room title clears header actions`)
-        .toBeGreaterThanOrEqual(lowestAction - 0.5)
+      const leftmostAction = Math.min(...headerLayout.actions.map((action) => action.left))
+      expect(headerLayout.title.right, `${scenario.label} room title clears header actions`)
+        .toBeLessThanOrEqual(leftmostAction + 0.5)
+      expect(headerLayout.title.width, `${scenario.label} room title keeps a readable width`)
+        .toBeGreaterThanOrEqual(64)
       for (const [index, action] of headerLayout.actions.entries()) {
         expect(action.left, `${scenario.label} header action ${index + 1} starts inside header`)
           .toBeGreaterThanOrEqual(headerLayout.header.left - 0.5)
