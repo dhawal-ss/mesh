@@ -965,7 +965,7 @@ function MessageInputContent({
       onDrop={disabled || disableAttachments ? undefined : handleDrop}
     >
       <div
-        className={`mesh-composer min-w-0 flex-1 overflow-hidden rounded-full border border-outline transition-colors ${
+        className={`mesh-composer min-w-0 flex-1 overflow-hidden rounded-xl border border-outline transition-colors ${
           isDragOver
             ? 'bg-primary-container ring-2 ring-primary-container-line'
             : 'bg-surface-container'

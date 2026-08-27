@@ -134,7 +134,7 @@ export function CommunityChecklist({
           {steps.map((step) => (
             <li
               key={step.id}
-              className={`flex items-start gap-2 rounded-full py-1 pr-1 ${
+              className={`flex items-start gap-2 rounded-md py-1 pr-1 ${
                 step.next
                   ? 'border-l-2 border-l-primary bg-surface-container-high pl-1.5'
                   : 'border-l-2 border-l-transparent pl-1.5'
