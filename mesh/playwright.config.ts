@@ -88,18 +88,6 @@ export default defineConfig({
       },
     },
     {
-      // The evidence generator. Its own project so `npm run e2e` never rewrites
-      // the screenshot set, and so the viewport is pinned to the reference
-      // matrix rather than inherited from whatever the suite last set.
-      name: 'chromium-evidence',
-      testMatch: ['**/capture-evidence.spec.ts'],
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1280, height: 720 },
-        deviceScaleFactor: 1,
-      },
-    },
-    {
       name: 'chromium-lan',
       testMatch: ['**/diagnostics.spec.ts', '**/legacy-voice-session.spec.ts'],
       use: {

@@ -44,6 +44,7 @@ e2e-results/
 # Internal documents, prompts, chats, and design artifacts
 *.md
 *.mdx
+!README.md
 !SECURITY.md
 !LICENSE_POLICY.md
 !mesh/THIRD_PARTY_NOTICES.md

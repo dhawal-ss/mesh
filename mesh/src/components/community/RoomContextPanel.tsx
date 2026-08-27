@@ -274,7 +274,7 @@ export function RoomContextPanel({
                 aria-controls={`room-context-${tab.id}`}
                 className={`mesh-room-context-tab min-h-8 flex-1 rounded-plane px-2 font-mono text-eyebrow font-medium uppercase transition-colors ${
                   activeTab === tab.id
-                    ? 'bg-accent text-content-on-accent'
+                    ? 'text-content-primary'
                     : 'text-content-secondary hover:bg-surface-fill hover:text-content-primary'
                 } ${tab.id === tabs[0]?.id ? '' : 'border-l border-rule border-border-structural'}`}
                 onClick={() => onTabChange(tab.id)}

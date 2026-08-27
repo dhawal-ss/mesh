@@ -72,7 +72,6 @@
     "e2e:performance": "npm run build && playwright test --config playwright.performance.config.ts",
     "e2e:large-timeline": "npm run build:performance-fixture && playwright test --config playwright.large-timeline.config.ts",
     "e2e:ui": "playwright test --ui",
-    "e2e:evidence": "playwright test --project chromium-evidence",
     "e2e:install": "playwright install chromium",
     "check:ipc-arguments": "node --test scripts/check-ipc-arguments.test.mjs && node scripts/check-ipc-arguments.mjs"
   },

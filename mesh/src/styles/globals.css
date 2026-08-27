@@ -2034,7 +2034,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 @media (max-width: 1023px) and (max-height: 700px) {
-  .mesh-onboarding-invitation-destination,
   .mesh-account-service-header > p {
     display: none;
   }

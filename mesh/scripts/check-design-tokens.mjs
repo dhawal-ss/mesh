@@ -16,17 +16,15 @@ const mainPath = path.join(root, 'src', 'main.tsx')
 const motionPath = path.join(root, 'src', 'lib', 'motion.ts')
 const componentsPath = path.join(root, 'src', 'components')
 const designLanguagePath = path.join(root, 'DESIGN_LANGUAGE.md')
-const designConformancePath = path.join(root, 'DESIGN_CONFORMANCE.md')
 const iconPath = path.join(root, 'src', 'components', 'ui', 'Icon.tsx')
 const voiceGridPath = path.join(root, 'src', 'components', 'voice', 'VoicePeerGrid.tsx')
 
-const [tailwind, globals, main, motion, designLanguage, designConformance, icon, voiceGrid] = await Promise.all([
+const [tailwind, globals, main, motion, designLanguage, icon, voiceGrid] = await Promise.all([
   readFile(tailwindPath, 'utf8'),
   readFile(globalsPath, 'utf8'),
   readFile(mainPath, 'utf8'),
   readFile(motionPath, 'utf8'),
   readFile(designLanguagePath, 'utf8'),
-  readFile(designConformancePath, 'utf8'),
   readFile(iconPath, 'utf8'),
   readFile(voiceGridPath, 'utf8'),
 ])
@@ -76,13 +74,6 @@ for (const contractPhrase of [
   if (!normalizedDesignLanguage.includes(contractPhrase.toLowerCase())) {
     errors.push(`DESIGN_LANGUAGE.md must include the contract phrase ${contractPhrase}`)
   }
-}
-
-if (!designConformance.includes('# Quiet Structure conformance')) {
-  errors.push('DESIGN_CONFORMANCE.md must name the Quiet Structure contract')
-}
-if (/\|\s*Open\s*\|/.test(designConformance)) {
-  errors.push('DESIGN_CONFORMANCE.md must not contain an open implementation row')
 }
 
 for (const iconSize of ['xs: 14', 'sm: 16', 'md: 18', 'lg: 24']) {

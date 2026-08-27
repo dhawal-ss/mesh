@@ -188,8 +188,8 @@ Voice is a primary route, not an overlay-only utility. Joining is one action. Me
 
 ## Budget decision
 
-Quiet Structure reuses the existing token architecture and consolidated shared rules rather than introducing a second styling approach. The last measurement of the Matrix voice production build was taken under Indie Workshop, at 90.46 KiB raw CSS and 17.87 KiB compressed against the original 100 KiB raw ceiling. That figure predates this contract and is not a claim about the current artifact: the ceiling is unchanged, and `check:bundle-size` re-measures `dist/` on the next build.
+Quiet Structure reuses the existing token architecture and consolidated shared rules rather than introducing a second styling approach. `check:bundle-size` measures each current build against the checked-in JavaScript and CSS ceilings; historical measurements are not part of this contract.
 
 Pixel-art masks are emitted as cacheable files instead of base64 stylesheet data. Lightning CSS performs behavior-preserving minification, and a tested PostCSS liveness pass removes source tokens that no compiled rule or renderer source can consume while preserving the complete source design contract. No ceiling increase or waiver is requested.
 
-The 79 ms median and 355 ms observed p95 recorded for the optimized production preview were measured under the previous contract and are carried here as the figure to beat, not as a current result. That measurement isolates the web production surface in any case, not native process launch or a signed installed build, and signed installed-build acceptance remains a separate release gate.
+Performance claims must come from the current performance fixtures or signed installed-build acceptance. Historical preview measurements are not release evidence.
