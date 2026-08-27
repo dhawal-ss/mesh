@@ -5,7 +5,7 @@ and Rust dependency graphs. Regenerate this file on every release candidate.
 This inventory does not replace review of the referenced license texts, SBOM,
 source-offer obligations, trademarks, or platform redistributables.
 
-- JavaScript packages: 473
+- JavaScript packages: 472
 - Rust packages: 911
 - Entries requiring license review: 0
 
@@ -88,8 +88,7 @@ from this generated inventory.
 | @floating-ui/dom | 1.8.0 | MIT | https://registry.npmjs.org/@floating-ui/dom/-/dom-1.8.0.tgz |
 | @floating-ui/react-dom | 2.1.9 | MIT | https://registry.npmjs.org/@floating-ui/react-dom/-/react-dom-2.1.9.tgz |
 | @floating-ui/utils | 0.2.12 | MIT | https://registry.npmjs.org/@floating-ui/utils/-/utils-0.2.12.tgz |
-| @fontsource-variable/inter | 5.3.0 | OFL-1.1 | https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.3.0.tgz |
-| @fontsource/ibm-plex-mono | 5.3.0 | OFL-1.1 | https://registry.npmjs.org/@fontsource/ibm-plex-mono/-/ibm-plex-mono-5.3.0.tgz |
+| @fontsource-variable/roboto-flex | 5.3.0 | OFL-1.1 | https://registry.npmjs.org/@fontsource-variable/roboto-flex/-/roboto-flex-5.3.0.tgz |
 | @humanfs/core | 0.19.2 | Apache-2.0 | https://registry.npmjs.org/@humanfs/core/-/core-0.19.2.tgz |
 | @humanfs/node | 0.16.8 | Apache-2.0 | https://registry.npmjs.org/@humanfs/node/-/node-0.16.8.tgz |
 | @humanfs/types | 0.15.0 | Apache-2.0 | https://registry.npmjs.org/@humanfs/types/-/types-0.15.0.tgz |
@@ -742,7 +741,7 @@ from this generated inventory.
 | gtk | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | gtk-sys | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
 | gtk3-macros | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs |
-| h2 | 0.4.15 | MIT | https://github.com/hyperium/h2 |
+| h2 | 0.4.16 | MIT | https://github.com/hyperium/h2 |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown |
 | hashbrown | 0.14.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown |
 | hashbrown | 0.15.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown |

@@ -76,9 +76,7 @@
     "check:ipc-arguments": "node --test scripts/check-ipc-arguments.test.mjs && node scripts/check-ipc-arguments.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/roboto-flex": "^5.3.0",
-    "@fontsource/ibm-plex-mono": "5.3.0",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-dialog": "2.7.2",
     "clsx": "^2.1.1",

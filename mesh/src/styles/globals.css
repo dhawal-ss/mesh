@@ -3,28 +3,12 @@
 @tailwind utilities;
 
 @font-face {
-  font-family: 'Inter Variable';
+  font-family: 'Roboto Flex';
   font-style: normal;
   font-display: swap;
   font-weight: 100 900;
-  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+  src: url('@fontsource-variable/roboto-flex/files/roboto-flex-latin-opsz-normal.woff2')
     format('woff2-variations');
-}
-
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 400;
-  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 500;
-  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
 }
 
 :root {
@@ -32,212 +16,161 @@
   font-feature-settings: 'liga' 1, 'calt' 1;
 
   /*
-   * Tier 1: reference colors. This palette is intentionally quiet and
-   * neutral: the accent is reserved for identity, focus, and action.
-   * Components may consume semantic or component tokens only.
+   * Tier 1: reference colours. Literals live here and nowhere else.
+   *
+   * The neutral ramp is chroma-free. That is the one decision that stops a
+   * Material 3 palette reading as stock: every tonal step is a pure grey, and
+   * the only colour on screen is one of three families doing one job each.
    */
-  --ref-neutral-1: #101113;
-  --ref-neutral-1-rgb: 16 17 19;
-  --ref-neutral-2: #1b1c1f;
-  --ref-neutral-2-rgb: 27 28 31;
-  --ref-neutral-3: #202125;
-  --ref-neutral-3-rgb: 32 33 37;
-  --ref-neutral-4: #27292e;
-  --ref-neutral-4-rgb: 39 41 46;
-  --ref-neutral-5: #2e3036;
-  --ref-neutral-5-rgb: 46 48 54;
-  --ref-neutral-6: #383a40;
-  --ref-neutral-7: #4a4d54;
-  --ref-neutral-7-rgb: 74 77 84;
-  --ref-neutral-8: #5a5e65;
-  --ref-neutral-9: #71757c;
-  --ref-neutral-9-rgb: 113 117 124;
-  --ref-neutral-10: #9fa3aa;
-  --ref-neutral-11: #c6c8cc;
-  --ref-neutral-12: #f0f1f2;
-  --ref-neutral-12-rgb: 240 241 242;
+  --ref-n-0: #050507;
+  --ref-n-0-rgb: 5 5 7;
+  --ref-n-4: #0F1011;
+  --ref-n-4-rgb: 15 16 17;
+  --ref-n-6: #17171C;
+  --ref-n-6-rgb: 23 23 28;
+  --ref-n-10: #1D1D23;
+  --ref-n-10-rgb: 29 29 35;
+  --ref-n-14: #26262E;
+  --ref-n-14-rgb: 38 38 46;
+  --ref-n-17: #313139;
+  --ref-n-17-rgb: 49 49 57;
+  --ref-n-22: #3D3D46;
+  --ref-n-22-rgb: 61 61 70;
+  --ref-n-56: #8E8E99;
+  --ref-n-56-rgb: 142 142 153;
+  --ref-n-80: #C6C6CE;
+  --ref-n-80-rgb: 198 198 206;
+  --ref-n-96: #F5F5F8;
+  --ref-n-96-rgb: 245 245 248;
 
-  /* Legacy violet references remain until the active accent aliases migrate. */
-  --ref-mesh-violet-8: #5948b8;
-  --ref-mesh-violet-8-rgb: 89 72 184;
-  --ref-mesh-violet-9: #8c7cff;
-  --ref-mesh-violet-9-rgb: 140 124 255;
-  --ref-mesh-violet-10: #a99cff;
-  --ref-mesh-violet-10-rgb: 169 156 255;
+  /* Azure: structure, selection, and your own messages. */
+  --ref-azure-20: #002E4E;
+  --ref-azure-20-rgb: 0 46 78;
+  --ref-azure-30: #1F3B5C;
+  --ref-azure-30-rgb: 31 59 92;
+  --ref-azure-40: #00548F;
+  --ref-azure-40-rgb: 0 84 143;
+  --ref-azure-80: #7FC0FF;
+  --ref-azure-80-rgb: 127 192 255;
+  --ref-azure-90: #CFE8FF;
+  --ref-azure-90-rgb: 207 232 255;
+  --ref-azure-92: #D6E7FA;
+  --ref-azure-92-rgb: 214 231 250;
 
-  /*
-   * Quiet Structure is the canonical product palette. Everything soft except
-   * the structural marks, which are dead sharp: the ground is a colder, deeper
-   * near-black and every boundary is an alpha-white hairline rather than a
-   * value step between surfaces.
-   */
-  --ref-quiet-canvas: #0A0A0B;
-  --ref-quiet-canvas-rgb: 10 10 11;
-  /* The one raised surface in the system. Used by the single panel card. */
-  --ref-quiet-raised: #101012;
-  --ref-quiet-raised-rgb: 16 16 18;
-  --ref-quiet-primary: #EDEDEF;
-  --ref-quiet-primary-rgb: 237 237 239;
-  /* Message body text, one step below primary so prose recedes from titles. */
-  --ref-quiet-body: #D6D7DB;
-  --ref-quiet-body-rgb: 214 215 219;
-  --ref-quiet-secondary: #8B8D93;
-  --ref-quiet-secondary-rgb: 139 141 147;
-  /*
-   * Supporting metadata at 4.00:1. Below the 4.5:1 body-text floor, so this is
-   * legal for text at 18px and above (WCAG 1.4.3 large text) and for control
-   * boundaries (1.4.11), and illegal for a 9.5px eyebrow.
-   */
-  --ref-quiet-tertiary: #6E7077;
-  --ref-quiet-tertiary-rgb: 110 112 119;
+  /* Coral: exceptions, mentions, destructive actions. The only red here. */
+  --ref-coral-20: #5F1005;
+  --ref-coral-20-rgb: 95 16 5;
+  --ref-coral-40: #B3271A;
+  --ref-coral-40-rgb: 179 39 26;
+  --ref-coral-80: #FF8F80;
+  --ref-coral-80-rgb: 255 143 128;
+  --ref-coral-90: #FFDAD4;
+  --ref-coral-90-rgb: 255 218 212;
 
-  /*
-   * The structural accent triad plus the confirmation green. These are the
-   * colours the trust rail, the active plane and the state ticks are made of.
-   */
-  --ref-quiet-ultramarine: #5B8CFF;
-  --ref-quiet-ultramarine-rgb: 91 140 255;
-  --ref-quiet-vermilion: #FF5C4D;
-  --ref-quiet-vermilion-rgb: 255 92 77;
-  --ref-quiet-chrome: #FFC91C;
-  --ref-quiet-chrome-rgb: 255 201 28;
-  --ref-quiet-green: #3DD68C;
-  --ref-quiet-green-rgb: 61 214 140;
+  /* Amber: pinned and live, and nothing else. */
+  --ref-amber-20: #3D2E00;
+  --ref-amber-20-rgb: 61 46 0;
+  --ref-amber-40: #7A5A00;
+  --ref-amber-40-rgb: 122 90 0;
+  --ref-amber-80: #FFD24A;
+  --ref-amber-80-rgb: 255 210 74;
+  --ref-amber-90: #FFEFC2;
+  --ref-amber-90-rgb: 255 239 194;
 
   /*
-   * Light ground. Quiet Structure is designed dark; the light theme is a
-   * derivation, not a design. The one rule that cannot be flipped
-   * automatically is the hairline: alpha-white over near-black becomes
-   * alpha-black over the light canvas, re-derived rather than inverted.
+   * The light ramp is a complete theme, not dark flipped. Its neutrals are
+   * chroma-free the same way, and its three families drop to the tone-40 step
+   * so they carry text on a light ground rather than glowing on a dark one.
    */
-  --ref-quiet-light-canvas: #F7F6F2;
-  --ref-quiet-light-canvas-rgb: 247 246 242;
-  --ref-quiet-light-primary: #171817;
-  --ref-quiet-light-primary-rgb: 23 24 23;
-  --ref-quiet-light-body: #2F3130;
-  --ref-quiet-light-body-rgb: 47 49 48;
-  --ref-quiet-light-secondary: #5E6160;
-  --ref-quiet-light-secondary-rgb: 94 97 96;
-  --ref-quiet-light-tertiary: #74777A;
-  --ref-quiet-light-tertiary-rgb: 116 119 122;
-  --ref-quiet-light-rule: #6E716F;
-  --ref-quiet-light-rule-rgb: 110 113 111;
-  --ref-quiet-light-rule-soft: #D8D7D2;
-  --ref-quiet-light-rule-soft-rgb: 216 215 210;
-  --ref-quiet-light-rail: #EEEDE8;
-  --ref-quiet-light-rail-rgb: 238 237 232;
-  --ref-quiet-light-hover: #ECEAE4;
-  --ref-quiet-light-hover-rgb: 236 234 228;
-  --ref-quiet-light-active: #E4E2DA;
-  --ref-quiet-light-active-rgb: 228 226 218;
-  --ref-quiet-light-ultramarine: #2A4FB8;
-  --ref-quiet-light-ultramarine-rgb: 42 79 184;
-  --ref-quiet-light-vermilion: #B22C1F;
-  --ref-quiet-light-vermilion-rgb: 178 44 31;
-  --ref-quiet-light-chrome: #7A5A00;
-  --ref-quiet-light-chrome-rgb: 122 90 0;
-  --ref-quiet-light-green: #16663D;
-  --ref-quiet-light-green-rgb: 22 102 61;
+  --ref-nl-100: #FFFFFF;
+  --ref-nl-100-rgb: 255 255 255;
+  --ref-nl-98: #FAFAFC;
+  --ref-nl-98-rgb: 250 250 252;
+  --ref-nl-96: #F4F4F7;
+  --ref-nl-96-rgb: 244 244 247;
+  --ref-nl-94: #EEEEF2;
+  --ref-nl-94-rgb: 238 238 242;
+  --ref-nl-92: #E8E8ED;
+  --ref-nl-92-rgb: 232 232 237;
+  --ref-nl-90: #E2E2E8;
+  --ref-nl-90-rgb: 226 226 232;
+  --ref-nl-80: #C7C7CF;
+  --ref-nl-80-rgb: 199 199 207;
+  --ref-nl-50: #74747E;
+  --ref-nl-50-rgb: 116 116 126;
+  --ref-nl-30: #46464E;
+  --ref-nl-30-rgb: 70 70 78;
+  --ref-nl-10: #1B1B1F;
+  --ref-nl-10-rgb: 27 27 31;
 
   /*
-   * Alpha-white is the whole structural vocabulary. Four strengths, named by
-   * the job they do rather than by their value, so a rule can never be reached
-   * for as a control boundary: .08 is 1.19:1 and would fail WCAG 1.4.11.
+   * High contrast keeps the M3 roles and pushes every on-colour to pure white
+   * or pure black. It is a complete functional theme, not an inversion.
    */
-  /*
-   * The two washes above, resolved against the canvas. A translucent value
-   * cannot be handed to Tailwind's alpha syntax, so the composited result is
-   * carried here and the two are asserted to agree by the token gate.
-   */
-  --ref-quiet-fill: #161617;
-  --ref-quiet-fill-rgb: 22 22 23;
-  --ref-quiet-fill-strong: #1E1E1F;
-  --ref-quiet-fill-strong-rgb: 30 30 31;
+  --ref-hc-low: #0A0A0C;
+  --ref-hc-low-rgb: 10 10 12;
+  --ref-hc-container: #141418;
+  --ref-hc-container-rgb: 20 20 24;
+  --ref-hc-high: #1E1E24;
+  --ref-hc-high-rgb: 30 30 36;
+  --ref-hc-highest: #282830;
+  --ref-hc-highest-rgb: 40 40 48;
+  --ref-hc-outline-variant: #B9B9C2;
+  --ref-hc-outline-variant-rgb: 185 185 194;
+  --ref-hc-azure: #AFD9FF;
+  --ref-hc-azure-rgb: 175 217 255;
+  --ref-hc-azure-container: #00385F;
+  --ref-hc-azure-container-rgb: 0 56 95;
+  --ref-hc-azure-secondary: #123049;
+  --ref-hc-azure-secondary-rgb: 18 48 73;
+  --ref-hc-coral: #FFB4A8;
+  --ref-hc-coral-rgb: 255 180 168;
+  --ref-hc-coral-container: #8C1D0D;
+  --ref-hc-coral-container-rgb: 140 29 13;
+  --ref-hc-amber: #FFDF7A;
+  --ref-hc-amber-rgb: 255 223 122;
+  --ref-hc-amber-container: #5C4400;
+  --ref-hc-amber-container-rgb: 92 68 0;
 
-  --ref-quiet-rule-alpha: 0.08;
-  --ref-quiet-rule-soft-alpha: 0.045;
-  --ref-quiet-fill-alpha: 0.05;
-  --ref-quiet-fill-hover-alpha: 0.08;
+  /*
+   * The hover and pressed faces of each tonal container: the container with
+   * its own foreground laid over it at --state-hover. M3 computes this with a
+   * state-layer element; carrying the composited result as a reference value
+   * instead keeps the two declaration branches in check-container-contrast
+   * resolvable, since a mix of two opaque colours cannot be resolved without
+   * approximating it.
+   */
+  --ref-azure-40-layer: #116098;
+  --ref-azure-30-layer: #2E4969;
+  --ref-coral-40-layer: #B93529;
+  --ref-amber-40-layer: #856610;
+  --ref-azure-90-layer: #BED9F1;
+  --ref-azure-92-layer: #C5D8EC;
+  --ref-coral-90-layer: #F2CAC3;
+  --ref-amber-90-layer: #EFE0B2;
 
-  --ref-accent-8: #A07C00;
-  --ref-accent-8-rgb: 160 124 0;
-  --ref-accent-9: #FFC91C;
-  --ref-accent-9-rgb: 255 201 28;
-  --ref-accent-10: #FFDD6B;
-  --ref-accent-10-rgb: 255 221 107;
-  --ref-accent-11: #FFEFB0;
-  --ref-green-11: #3dbe72;
-  --ref-red-11: #f06a73;
-  --ref-red-11-rgb: 240 106 115;
-  --ref-red-light-11: #b4232a;
-  --ref-red-light-11-rgb: 180 35 42;
-  --ref-amber-11: #f0b232;
-  --ref-amber-11-rgb: 240 178 50;
-  --ref-amber-light-11: #815900;
-  --ref-amber-light-11-rgb: 129 89 0;
-  --ref-blue-11: #6fafff;
-  --ref-blue-11-rgb: 111 175 255;
-  --ref-blue-light-11: #1f5fae;
-  --ref-blue-light-11-rgb: 31 95 174;
-  /*
-   * Light-theme accent ramps. The dark ramps are pale by design (they sit on
-   * near-black), which leaves them at ~1.7:1 on a light canvas: invisible as
-   * fills, rings, and the active-channel marker. Each light ramp is verified at
-   * >= 4.5:1 against white so it works for both text and non-text contrast.
-   */
-  --ref-accent-sand-light-9: #7A5A00;
-  --ref-accent-sand-light-9-rgb: 122 90 0;
-  --ref-accent-sand-light-10: #5C4400;
-  --ref-accent-sand-light-10-rgb: 92 68 0;
-  --ref-accent-sand-light-8: #9C7A1E;
-  --ref-accent-sand-light-8-rgb: 156 122 30;
-  --ref-accent-ocean-light-9: #2A4FB8;
-  --ref-accent-ocean-light-9-rgb: 42 79 184;
-  --ref-accent-ocean-light-10: #1E3A8C;
-  --ref-accent-ocean-light-10-rgb: 30 58 140;
-  --ref-accent-ocean-light-8: #6485D6;
-  --ref-accent-ocean-light-8-rgb: 100 133 214;
-  --ref-accent-violet-light-9: #A31580;
-  --ref-accent-violet-light-9-rgb: 163 21 128;
-  --ref-accent-violet-light-10: #7D1062;
-  --ref-accent-violet-light-10-rgb: 125 16 98;
-  --ref-accent-violet-light-8: #CC5FAE;
-  --ref-accent-violet-light-8-rgb: 204 95 174;
-  --ref-accent-forest-light-9: #4A6B00;
-  --ref-accent-forest-light-9-rgb: 74 107 0;
-  --ref-accent-forest-light-10: #385100;
-  --ref-accent-forest-light-10-rgb: 56 81 0;
-  --ref-accent-forest-light-8: #6E8C22;
-  --ref-accent-forest-light-8-rgb: 110 140 34;
-  --ref-accent-ember-light-9: #B22C1F;
-  --ref-accent-ember-light-9-rgb: 178 44 31;
-  --ref-accent-ember-light-10: #8A2117;
-  --ref-accent-ember-light-10-rgb: 138 33 23;
-  --ref-accent-ember-light-8: #D06A5F;
-  --ref-accent-ember-light-8-rgb: 208 106 95;
-  --ref-accent-rose-light-9: #0F6B73;
-  --ref-accent-rose-light-9-rgb: 15 107 115;
-  --ref-accent-rose-light-10: #0B5157;
-  --ref-accent-rose-light-10-rgb: 11 81 87;
-  --ref-accent-rose-light-8: #4A9AA1;
-  --ref-accent-rose-light-8-rgb: 74 154 161;
-  /*
-   * The rail is the one surface that sits behind every route, so it is the one
-   * surface that must not go cold. This is the canvas taken two steps darker on
-   * the same warm ramp, not pure black.
-   */
-  --ref-quiet-rail: #0D0C0B;
   --ref-black: #000000;
   --ref-black-rgb: 0 0 0;
   --ref-white: #ffffff;
   --ref-white-rgb: 255 255 255;
 
-  --ref-accent-ocean-9: #5B8CFF;
-  --ref-accent-ocean-9-rgb: 91 140 255;
-  --ref-accent-ocean-10: #8AAEFF;
-  --ref-accent-ocean-10-rgb: 138 174 255;
-  --ref-accent-ocean-8: #3E68B8;
-  --ref-accent-ocean-8-rgb: 62 104 184;
+  /*
+   * The six selectable accent ramps. Azure is the product's own primary; these
+   * are a person's override of it, so each one re-points --primary and its
+   * containers rather than introducing a fourth colour job.
+   */
+  --ref-accent-sand-9: #FFC91C;
+  --ref-accent-sand-9-rgb: 255 201 28;
+  --ref-accent-sand-10: #FFDD6B;
+  --ref-accent-sand-10-rgb: 255 221 107;
+  --ref-accent-sand-8: #A07C00;
+  --ref-accent-sand-8-rgb: 160 124 0;
+  --ref-accent-ocean-9: #7FC0FF;
+  --ref-accent-ocean-9-rgb: 127 192 255;
+  --ref-accent-ocean-10: #CFE8FF;
+  --ref-accent-ocean-10-rgb: 207 232 255;
+  --ref-accent-ocean-8: #00548F;
+  --ref-accent-ocean-8-rgb: 0 84 143;
   --ref-accent-violet-9: #FF5FD1;
   --ref-accent-violet-9-rgb: 255 95 209;
   --ref-accent-violet-10: #FF95E1;
@@ -250,222 +183,181 @@
   --ref-accent-forest-10-rgb: 207 240 110;
   --ref-accent-forest-8: #77991F;
   --ref-accent-forest-8-rgb: 119 153 31;
-  --ref-accent-ember-9: #FF5C4D;
-  --ref-accent-ember-9-rgb: 255 92 77;
-  --ref-accent-ember-10: #FF8C82;
-  --ref-accent-ember-10-rgb: 255 140 130;
-  --ref-accent-ember-8: #B0432F;
-  --ref-accent-ember-8-rgb: 176 67 47;
+  --ref-accent-ember-9: #FF8F80;
+  --ref-accent-ember-9-rgb: 255 143 128;
+  --ref-accent-ember-10: #FFDAD4;
+  --ref-accent-ember-10-rgb: 255 218 212;
+  --ref-accent-ember-8: #B3271A;
+  --ref-accent-ember-8-rgb: 179 39 26;
   --ref-accent-rose-9: #2FD9E8;
   --ref-accent-rose-9-rgb: 47 217 232;
   --ref-accent-rose-10: #7CE8F1;
   --ref-accent-rose-10-rgb: 124 232 241;
   --ref-accent-rose-8: #22909B;
   --ref-accent-rose-8-rgb: 34 144 155;
+  --ref-accent-sand-light-9: #7A5A00;
+  --ref-accent-sand-light-9-rgb: 122 90 0;
+  --ref-accent-sand-light-10: #FFEFC2;
+  --ref-accent-sand-light-10-rgb: 255 239 194;
+  --ref-accent-ocean-light-9: #00548F;
+  --ref-accent-ocean-light-9-rgb: 0 84 143;
+  --ref-accent-ocean-light-10: #CFE8FF;
+  --ref-accent-ocean-light-10-rgb: 207 232 255;
+  --ref-accent-violet-light-9: #A31580;
+  --ref-accent-violet-light-9-rgb: 163 21 128;
+  --ref-accent-violet-light-10: #FFD9F0;
+  --ref-accent-violet-light-10-rgb: 255 217 240;
+  --ref-accent-forest-light-9: #4A6B00;
+  --ref-accent-forest-light-9-rgb: 74 107 0;
+  --ref-accent-forest-light-10: #DFF0B8;
+  --ref-accent-forest-light-10-rgb: 223 240 184;
+  --ref-accent-ember-light-9: #B3271A;
+  --ref-accent-ember-light-9-rgb: 179 39 26;
+  --ref-accent-ember-light-10: #FFDAD4;
+  --ref-accent-ember-light-10-rgb: 255 218 212;
+  --ref-accent-rose-light-9: #0F6B73;
+  --ref-accent-rose-light-9-rgb: 15 107 115;
+  --ref-accent-rose-light-10: #C9EDF0;
+  --ref-accent-rose-light-10-rgb: 201 237 240;
 
-  --ref-avatar-sand: #d4c0a1;
-  --ref-avatar-blue: #60a5fa;
-  --ref-avatar-green: #4ade80;
-  --ref-avatar-red: #f87171;
-  --ref-avatar-violet: #a78bfa;
-  --ref-avatar-orange: #fb923c;
-  --ref-avatar-pink: #f472b6;
-  --ref-avatar-emerald: #34d399;
-  --ref-avatar-yellow: #facc15;
-  --ref-avatar-cyan: #38bdf8;
+  /*
+   * Identity tints. Ten tonal steps taken from the same neutral-plus-three
+   * discipline as the rest of the palette rather than ten stock hues, so a
+   * hashed mark still reads as belonging to this product.
+   */
+  --ref-avatar-sand: #E3C79A;
+  --ref-avatar-blue: #7FC0FF;
+  --ref-avatar-green: #9FD8A8;
+  --ref-avatar-red: #FF8F80;
+  --ref-avatar-violet: #C7B8F0;
+  --ref-avatar-orange: #F2B183;
+  --ref-avatar-pink: #EFA8C4;
+  --ref-avatar-emerald: #8ED3B4;
+  --ref-avatar-yellow: #FFD24A;
+  --ref-avatar-cyan: #8FCFD8;
 
-  /* Tier 2: semantic roles. Feature code should use this tier. */
   /*
-   * The rail is no longer a darker surface. In Quiet Structure the rail, the
-   * list column and the conversation are all the same near-black ground and
-   * are separated by a rule, not by a value step. Anything that assumed the
-   * rail was the darkest surface is now wrong by construction.
-   */
-  --surface-canvas: var(--ref-quiet-canvas);
-  --surface-rail: var(--ref-quiet-canvas);
-  --surface-sunken-rgb: var(--ref-quiet-canvas-rgb);
-  --surface-sunken: var(--ref-quiet-canvas);
-  --surface-sidebar-rgb: var(--ref-quiet-canvas-rgb);
-  --surface-sidebar: var(--ref-quiet-canvas);
-  --surface-base-rgb: var(--ref-quiet-canvas-rgb);
-  --surface-base: var(--ref-quiet-canvas);
-  --surface-raised-rgb: var(--ref-quiet-raised-rgb);
-  --surface-raised: var(--ref-quiet-raised);
-  /*
-   * The one new surface role. An avatar tile, an input ground and a hovered
-   * row are all the same alpha-white wash, so they composite onto whatever is
-   * behind them instead of needing a surface of their own.
-   */
-  --surface-fill: rgb(var(--ref-white-rgb) / var(--ref-quiet-fill-alpha));
-  --surface-fill-hover: rgb(var(--ref-white-rgb) / var(--ref-quiet-fill-hover-alpha));
-  --surface-overlay-rgb: var(--ref-quiet-raised-rgb);
-  --surface-overlay: var(--ref-quiet-raised);
-  /*
-   * Pre-composited, not translucent.
+   * Tier 2: Material 3 semantic roles. Feature code uses this tier.
    *
-   * Tailwind consumes these through `rgb(var(--surface-hover-rgb) /
-   * <alpha-value>)` and substitutes 1 when no opacity modifier is written, so
-   * a channel triple of pure white here renders `hover:bg-surface-hover` as
-   * opaque white across 223 call sites. The alpha lives in --ref-quiet-fill-*
-   * and the result of applying it to the canvas is what these carry.
-   *
-   * --surface-fill above is the translucent twin, exported as a plain var()
-   * rather than through withAlpha, and it is what to reach for where the wash
-   * has to composite onto something other than the canvas -- over media, over
-   * a plane, or over the one raised surface.
+   * Six surface tones, six distinct values. A pane is separated from its
+   * neighbour by a step on this ramp and a 28px radius; there is no hairline
+   * left in the system, and the token gate asserts that no two tones have
+   * quietly collapsed onto the same value.
    */
-  --surface-hover-rgb: var(--ref-quiet-fill-rgb);
-  --surface-hover: var(--ref-quiet-fill);
-  --surface-active-rgb: var(--ref-quiet-fill-strong-rgb);
-  --surface-active: var(--ref-quiet-fill-strong);
-  --surface-selected-rgb: var(--ref-quiet-fill-strong-rgb);
-  --surface-selected: var(--ref-quiet-fill-strong);
+  --surface-rgb: var(--ref-n-4-rgb);
+  --surface: var(--ref-n-4);
+  --surface-container-lowest-rgb: var(--ref-n-0-rgb);
+  --surface-container-lowest: var(--ref-n-0);
+  --surface-container-low-rgb: var(--ref-n-6-rgb);
+  --surface-container-low: var(--ref-n-6);
+  --surface-container-rgb: var(--ref-n-10-rgb);
+  --surface-container: var(--ref-n-10);
+  --surface-container-high-rgb: var(--ref-n-14-rgb);
+  --surface-container-high: var(--ref-n-14);
+  --surface-container-highest-rgb: var(--ref-n-17-rgb);
+  --surface-container-highest: var(--ref-n-17);
+  --on-surface-rgb: var(--ref-n-96-rgb);
+  --on-surface: var(--ref-n-96);
+  --on-surface-variant-rgb: var(--ref-n-80-rgb);
+  --on-surface-variant: var(--ref-n-80);
   /*
-   * The backdrop is the canvas at 72%, not black at 70%. Black behind a
-   * near-black ground is a second, colder darkness; the canvas is the app
-   * receding rather than a different surface arriving over it.
+   * --outline is the boundary of a control whose shape is not otherwise
+   * conveyed by a fill, and it clears 3:1 (WCAG 1.4.11). --outline-variant is
+   * decorative and may never carry the shape of a control.
    */
-  --surface-scrim: rgb(var(--ref-quiet-canvas-rgb) / 0.72);
+  --outline-rgb: var(--ref-n-56-rgb);
+  --outline: var(--ref-n-56);
+  --outline-variant-rgb: var(--ref-n-22-rgb);
+  --outline-variant: var(--ref-n-22);
+  --inverse-surface-rgb: var(--ref-n-80-rgb);
+  --inverse-surface: var(--ref-n-80);
+  --on-inverse-surface-rgb: var(--ref-n-4-rgb);
+  --on-inverse-surface: var(--ref-n-4);
+
+  --primary-rgb: var(--ref-azure-80-rgb);
+  --primary: var(--ref-azure-80);
+  --on-primary-rgb: var(--ref-azure-20-rgb);
+  --on-primary: var(--ref-azure-20);
+  --primary-container-rgb: var(--ref-azure-40-rgb);
+  --primary-container: var(--ref-azure-40);
+  --on-primary-container-rgb: var(--ref-azure-90-rgb);
+  --on-primary-container: var(--ref-azure-90);
+  /* Selection pills. One step quieter than the primary container. */
+  --secondary-container-rgb: var(--ref-azure-30-rgb);
+  --secondary-container: var(--ref-azure-30);
+  --on-secondary-container-rgb: var(--ref-azure-92-rgb);
+  --on-secondary-container: var(--ref-azure-92);
+
+  --error-rgb: var(--ref-coral-80-rgb);
+  --error: var(--ref-coral-80);
+  --on-error-rgb: var(--ref-coral-20-rgb);
+  --on-error: var(--ref-coral-20);
+  --error-container-rgb: var(--ref-coral-40-rgb);
+  --error-container: var(--ref-coral-40);
+  --on-error-container-rgb: var(--ref-coral-90-rgb);
+  --on-error-container: var(--ref-coral-90);
+
+  --marker-rgb: var(--ref-amber-80-rgb);
+  --marker: var(--ref-amber-80);
+  --on-marker-rgb: var(--ref-amber-20-rgb);
+  --on-marker: var(--ref-amber-20);
+  --marker-container-rgb: var(--ref-amber-40-rgb);
+  --marker-container: var(--ref-amber-40);
+  --on-marker-container-rgb: var(--ref-amber-90-rgb);
+  --on-marker-container: var(--ref-amber-90);
+
+  /*
+   * State layers. These are the M3 opacities, applied over whatever role
+   * colour is underneath, and they are what replaced the four alpha-white
+   * fills the old structural vocabulary was made of.
+   */
+  --state-hover: 0.08;
+  --state-focus: 0.10;
+  --state-pressed: 0.10;
+  --state-drag: 0.16;
+  --state-layer-hover: rgb(var(--on-surface-rgb) / var(--state-hover));
+  --state-layer-focus: rgb(var(--on-surface-rgb) / var(--state-focus));
+  --state-layer-pressed: rgb(var(--on-surface-rgb) / var(--state-pressed));
+
+  /*
+   * Focus stays authored and stays amber. M3's own focus indicator is a state
+   * layer, which a keyboard user cannot see against a hovered row, so the 2px
+   * outline at 2px offset survives this migration unchanged.
+   */
+  --border-focus-rgb: var(--ref-amber-80-rgb);
+  --border-focus: var(--ref-amber-80);
+
+  --surface-scrim: rgb(var(--ref-n-0-rgb) / 0.72);
   --surface-nav-scrim: rgb(var(--ref-black-rgb) / 0.58);
-  --surface-pane-tint: transparent;
   --surface-qr-rgb: var(--ref-white-rgb);
   --surface-qr: var(--ref-white);
   --surface-asset-preview: var(--ref-black);
-
-  --content-normal-rgb: var(--ref-quiet-body-rgb);
-  --content-normal: var(--ref-quiet-body);
-  /*
-   * Message prose sits one step below a title so a screen reads as structure
-   * first and text second. This is the role every timeline body takes.
-   */
-  --content-body-rgb: var(--ref-quiet-body-rgb);
-  --content-body: var(--ref-quiet-body);
-  --content-tertiary-rgb: var(--ref-quiet-tertiary-rgb);
-  --content-tertiary: var(--ref-quiet-tertiary);
-  --content-primary-rgb: var(--ref-quiet-primary-rgb);
-  --content-primary: var(--ref-quiet-primary);
-  --content-secondary-rgb: var(--ref-quiet-secondary-rgb);
-  --content-secondary: var(--ref-quiet-secondary);
-  --content-muted-rgb: var(--ref-quiet-secondary-rgb);
-  --content-muted: var(--ref-quiet-secondary);
-  --content-link-rgb: var(--ref-quiet-ultramarine-rgb);
-  --content-link: var(--ref-quiet-ultramarine);
-  --content-accent-rgb: var(--accent-rgb);
-  --content-accent: var(--accent);
-  --content-on-accent-rgb: var(--ref-quiet-canvas-rgb);
-  --content-on-accent: var(--ref-quiet-canvas);
-  --content-on-status-rgb: var(--ref-quiet-canvas-rgb);
-  --content-on-status: var(--ref-quiet-canvas);
-  --content-on-avatar-rgb: var(--ref-quiet-canvas-rgb);
-  --content-on-avatar: var(--ref-quiet-canvas);
-  --content-on-media-overlay-rgb: var(--ref-white-rgb);
-  --content-on-media-overlay: var(--ref-white);
-  --border-default-rgb: var(--ref-quiet-tertiary-rgb);
-  --border-default: var(--ref-quiet-tertiary);
-  --border-emphasis-rgb: var(--ref-quiet-tertiary-rgb);
-  --border-emphasis: var(--ref-quiet-tertiary);
-  --border-subtle: var(--border-row);
-  --border-strong: var(--ref-quiet-tertiary);
-  /*
-   * The two structural hairlines. `--border-structural` is the boundary
-   * between panes; `--border-row` separates rows inside one list. Both are
-   * decorative under WCAG 1.4.11 (1.19:1 and 1.09:1) and may never carry the
-   * shape of a control -- that is --border-control's job, and it is a
-   * different, measurably stronger colour.
-   */
-  --border-structural: rgb(var(--ref-white-rgb) / var(--ref-quiet-rule-alpha));
-  --border-row: rgb(var(--ref-white-rgb) / var(--ref-quiet-rule-soft-alpha));
-  /*
-   * --border-control is the boundary of an interactive control whose shape is
-   * not otherwise conveyed by a fill. WCAG 1.4.11 requires 3:1 there, which
-   * --border-default (1.50:1 dark / 1.68:1 light) does not meet. Decorative
-   * separators keep using --border-subtle; only controls use this.
-   */
-  --border-control-rgb: var(--ref-quiet-tertiary-rgb);
-  --border-control: var(--ref-quiet-tertiary);
-  --border-focus-rgb: var(--ref-quiet-chrome-rgb);
-  --border-focus: var(--ref-quiet-chrome);
-  --presence-offline-rgb: var(--ref-neutral-9-rgb);
-  --presence-offline: var(--ref-neutral-9);
-  --accent-rgb: var(--ref-quiet-ultramarine-rgb);
-  --accent: var(--ref-quiet-ultramarine);
-  --accent-hover-rgb: var(--ref-accent-ocean-10-rgb);
-  --accent-hover: var(--ref-accent-ocean-10);
-  --accent-muted-rgb: var(--ref-accent-ocean-8-rgb);
-  --accent-muted: var(--ref-accent-ocean-8);
-  /*
-   * Status is the trust rail's vocabulary before it is anything else. Local,
-   * decrypted, verified is success; another homeserver is warning;
-   * undecryptable or an unverified device is danger. Those three colours are
-   * therefore the triad itself, not a separate status ramp that happens to
-   * look similar.
-   */
-  --status-success-rgb: var(--ref-quiet-green-rgb);
-  --status-success: var(--ref-quiet-green);
-  --status-danger-rgb: var(--ref-quiet-vermilion-rgb);
-  --status-danger: var(--ref-quiet-vermilion);
-  --status-warning-rgb: var(--ref-quiet-chrome-rgb);
-  --status-warning: var(--ref-quiet-chrome);
-  --status-info-rgb: var(--ref-quiet-ultramarine-rgb);
-  --status-info: var(--ref-quiet-ultramarine);
-  /*
-   * Solid status fills need a hover face the way --accent-hover does. Without
-   * one, every solid status control reached for an opacity modifier
-   * (bg-status-danger/95, bg-status-warning/80) and invented its own strength.
-   * The color-mix override below moves each fill toward the theme's own text
-   * color, so hover gains contrast in dark and in light without a second ramp.
-   */
-  --status-success-hover: var(--status-success);
-  --status-danger-hover: var(--status-danger);
-  --status-warning-hover: var(--status-warning);
-  --status-info-hover: var(--status-info);
+  --on-media-overlay-rgb: var(--ref-white-rgb);
+  --on-media-overlay: var(--ref-white);
+  --presence-offline-rgb: var(--ref-n-56-rgb);
+  --presence-offline: var(--ref-n-56);
+  --scrollbar: var(--ref-n-17);
+  --scrollbar-hover: var(--ref-n-22);
 
   /*
-   * Container quintuples are the only component-facing interaction palettes.
-   * The first declarations are conservative WebView fallbacks; the
-   * color-mix override below derives translucent states in perceptual OKLCH.
-   *
-   * The 0.78 on every `-line` is measured, not chosen. A container line is the
-   * whole of an advisory notice's chrome, one rule on the leading edge over a
-   * transparent background, so it is a meaningful boundary and owes 3:1 under
-   * WCAG 1.4.11. At the 0.55 it shipped with, all five fell short on the light
-   * canvas (2.28:1 to 2.67:1) and danger also failed on the dark one (2.68:1).
-   * 0.78 is the lowest step that clears 3:1 for every tone on every surface a
-   * notice can sit on; the worst case is success on the light rail at 3.27:1.
-   * check-container-contrast.mjs recomputes all of it from this file.
+   * Tonal containers. One value per role with one legible foreground, plus a
+   * hover and pressed face and a boundary measured to clear 3:1 on every
+   * surface a notice can sit on. The hover and pressed faces are derived from
+   * the state-layer opacities in the @supports block below;
+   * check-container-contrast.mjs recomputes the boundaries from this file.
    */
-  --surface-container: var(--surface-raised);
-  --surface-container-hover: var(--surface-hover);
-  --surface-container-active: var(--surface-active);
-  --surface-container-line: var(--border-default);
-  --surface-on-container: var(--content-primary);
-  --accent-container: rgb(var(--accent-rgb) / 0.14);
-  --accent-container-hover: rgb(var(--accent-rgb) / 0.2);
-  --accent-container-active: rgb(var(--accent-rgb) / 0.28);
-  --accent-container-line: rgb(var(--accent-rgb) / 0.78);
-  --accent-on-container: var(--content-accent);
-  --success-container: rgb(var(--status-success-rgb) / 0.14);
-  --success-container-hover: rgb(var(--status-success-rgb) / 0.2);
-  --success-container-active: rgb(var(--status-success-rgb) / 0.28);
-  --success-container-line: rgb(var(--status-success-rgb) / 0.78);
-  --success-on-container: var(--status-success);
-  --warning-container: rgb(var(--status-warning-rgb) / 0.14);
-  --warning-container-hover: rgb(var(--status-warning-rgb) / 0.2);
-  --warning-container-active: rgb(var(--status-warning-rgb) / 0.28);
-  --warning-container-line: rgb(var(--status-warning-rgb) / 0.78);
-  --warning-on-container: var(--status-warning);
-  --danger-container: rgb(var(--status-danger-rgb) / 0.14);
-  --danger-container-hover: rgb(var(--status-danger-rgb) / 0.2);
-  --danger-container-active: rgb(var(--status-danger-rgb) / 0.28);
-  --danger-container-line: rgb(var(--status-danger-rgb) / 0.78);
-  --danger-on-container: var(--status-danger);
-  --info-container: rgb(var(--status-info-rgb) / 0.14);
-  --info-container-hover: rgb(var(--status-info-rgb) / 0.2);
-  --info-container-active: rgb(var(--status-info-rgb) / 0.28);
-  --info-container-line: rgb(var(--status-info-rgb) / 0.78);
-  --info-on-container: var(--status-info);
-  --scrollbar: var(--ref-neutral-4);
-  --scrollbar-hover: var(--ref-neutral-6);
+  --primary-container-hover: var(--ref-azure-40-layer);
+  --primary-container-active: var(--ref-azure-40-layer);
+  --primary-container-line: rgb(var(--primary-rgb) / 0.78);
+  --secondary-container-hover: var(--ref-azure-30-layer);
+  --secondary-container-active: var(--ref-azure-30-layer);
+  --secondary-container-line: rgb(var(--primary-rgb) / 0.78);
+  --error-container-hover: var(--ref-coral-40-layer);
+  --error-container-active: var(--ref-coral-40-layer);
+  --error-container-line: rgb(var(--error-rgb) / 0.78);
+  --marker-container-hover: var(--ref-amber-40-layer);
+  --marker-container-active: var(--ref-amber-40-layer);
+  --marker-container-line: rgb(var(--marker-rgb) / 0.78);
 
   --avatar-sand: var(--ref-avatar-sand);
   --avatar-blue: var(--ref-avatar-blue);
@@ -477,170 +369,103 @@
   --avatar-emerald: var(--ref-avatar-emerald);
   --avatar-yellow: var(--ref-avatar-yellow);
   --avatar-cyan: var(--ref-avatar-cyan);
-
-  /* Tier 3: component roles. These may reference semantic tokens only. */
-  --presence-dot-online: var(--status-success);
+  --on-avatar-rgb: var(--ref-n-0-rgb);
+  --on-avatar: var(--ref-n-0);
 
   /*
-   * Compatibility aliases preserve every existing class and CSS call site.
-   * They can be retired incrementally after components adopt semantic roles.
-   */
-  --bg-tertiary-rgb: var(--surface-sunken-rgb);
-  --bg-tertiary: var(--surface-sunken);
-  --bg-secondary-rgb: var(--surface-sidebar-rgb);
-  --bg-secondary: var(--surface-sidebar);
-  --bg-primary-rgb: var(--surface-base-rgb);
-  --bg-primary: var(--surface-base);
-  --bg-modifier-hover-rgb: var(--surface-hover-rgb);
-  --bg-modifier-hover: var(--surface-hover);
-  --bg-modifier-active-rgb: var(--surface-active-rgb);
-  --bg-modifier-active: var(--surface-active);
-  --bg-modifier-selected-rgb: var(--surface-active-rgb);
-  --bg-modifier-selected: var(--surface-active);
-  --bg-floating-rgb: var(--surface-overlay-rgb);
-  --bg-floating: var(--surface-overlay);
-  --text-normal: var(--content-normal);
-  --text-primary: var(--content-primary);
-  --text-secondary: var(--content-secondary);
-  --text-muted: var(--content-muted);
-  --text-link: var(--content-link);
-  --green: var(--status-success);
-  --red: var(--status-danger);
-  --yellow: var(--status-warning);
-  --blue: var(--status-info);
-
-  /* Typography reference scale */
-  /*
-   * User text scaling (WCAG 1.4.4). Applied at the semantic tier so the
+   * Typography. One family, thirteen roles, an 11px floor.
+   *
+   * User text scaling (WCAG 1.4.4) is applied at the semantic tier so the
    * high-resolution blocks below, which rewrite --ref-size-*, keep composing
-   * with it: a 4K workspace at 125% gets both. Set as an inline custom property
-   * on the root element by applyAppearancePreferences.
+   * with it: a 4K workspace at 125% gets both.
    */
   --text-scale: 1;
   --ref-size-11: 11px;
   --ref-size-12: 12px;
-  --ref-size-13: 13px;
   --ref-size-14: 14px;
-  --ref-size-15: 15px;
-  --ref-size-18: 18px;
+  --ref-size-16: 16px;
   --ref-size-22: 22px;
   --ref-size-28: 28px;
+  --ref-size-32: 32px;
+  --ref-size-45: 45px;
+  --ref-size-57: 57px;
+  --font-sans: 'Roboto Flex', Roboto, ui-sans-serif, system-ui, sans-serif;
   /*
-   * Quiet Structure's poster steps. The gap between 15px and 30px is
-   * deliberate: there is no mid-sized heading in this system, because a screen
-   * has exactly one title and everything under it is a row.
+   * Not a vendored family. This ships no bytes and is legal in exactly two
+   * places: a fenced code block, and a device key or session id. Both are
+   * machine values a person copies rather than reads.
    */
-  --ref-size-9-5: 9.5px;
-  --ref-size-10: 10px;
-  --ref-size-12-5: 12.5px;
-  --ref-size-13-5: 13.5px;
-  --ref-size-30: 30px;
-  --ref-size-42: 42px;
-  --ref-size-46: 46px;
-  --ref-size-50: 50px;
-  --ref-size-56: 56px;
-  --ref-size-76: 76px;
-  --font-sans: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --font-size-2xs: calc(var(--ref-size-11) * var(--text-scale));
-  --font-size-xs: calc(var(--ref-size-12) * var(--text-scale));
-  --font-size-code: calc(var(--ref-size-13) * var(--text-scale));
-  --font-size-dense: calc(var(--ref-size-13) * var(--text-scale));
-  --font-size-sm: calc(var(--ref-size-14) * var(--text-scale));
-  --font-size-base: calc(var(--ref-size-15) * var(--text-scale));
-  --font-size-md: calc(var(--ref-size-18) * var(--text-scale));
-  --font-size-title: calc(var(--ref-size-22) * var(--text-scale));
-  --font-size-lg: calc(var(--ref-size-28) * var(--text-scale));
-  --font-size-eyebrow: calc(var(--ref-size-9-5) * var(--text-scale));
-  --font-size-count: calc(var(--ref-size-10) * var(--text-scale));
-  --font-size-support: calc(var(--ref-size-12-5) * var(--text-scale));
-  --font-size-row: calc(var(--ref-size-13-5) * var(--text-scale));
-  --font-size-panel: calc(var(--ref-size-15) * var(--text-scale));
-  --font-size-section: calc(var(--ref-size-30) * var(--text-scale));
-  --font-size-numeral: calc(var(--ref-size-42) * var(--text-scale));
-  --font-size-screen-sm: calc(var(--ref-size-46) * var(--text-scale));
-  --font-size-screen: calc(var(--ref-size-56) * var(--text-scale));
-  --font-size-display: calc(var(--ref-size-76) * var(--text-scale));
+  --font-code: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --type-display-lg: calc(var(--ref-size-57) * var(--text-scale));
+  --type-display-sm: calc(var(--ref-size-45) * var(--text-scale));
+  --type-headline-lg: calc(var(--ref-size-32) * var(--text-scale));
+  --type-headline-md: calc(var(--ref-size-28) * var(--text-scale));
+  --type-title-lg: calc(var(--ref-size-22) * var(--text-scale));
+  --type-title-md: calc(var(--ref-size-16) * var(--text-scale));
+  --type-title-sm: calc(var(--ref-size-14) * var(--text-scale));
+  --type-body-lg: calc(var(--ref-size-16) * var(--text-scale));
+  --type-body-md: calc(var(--ref-size-14) * var(--text-scale));
+  --type-body-sm: calc(var(--ref-size-12) * var(--text-scale));
+  --type-label-lg: calc(var(--ref-size-14) * var(--text-scale));
+  --type-label-md: calc(var(--ref-size-12) * var(--text-scale));
+  --type-label-sm: calc(var(--ref-size-11) * var(--text-scale));
+  --type-line-display-lg: calc(64px * var(--text-scale));
+  --type-line-display-sm: calc(52px * var(--text-scale));
+  --type-line-headline-lg: calc(40px * var(--text-scale));
+  --type-line-headline-md: calc(36px * var(--text-scale));
+  --type-line-title-lg: calc(28px * var(--text-scale));
+  --type-line-title-md: calc(24px * var(--text-scale));
+  --type-line-title-sm: calc(20px * var(--text-scale));
+  --type-line-body-lg: calc(24px * var(--text-scale));
+  --type-line-body-md: calc(20px * var(--text-scale));
+  --type-line-body-sm: calc(16px * var(--text-scale));
+  --type-line-label-lg: calc(20px * var(--text-scale));
+  --type-line-label-md: calc(16px * var(--text-scale));
+  --type-line-label-sm: calc(16px * var(--text-scale));
+  --type-track-display-lg: -0.25px;
+  --type-track-title-md: 0.15px;
+  --type-track-title-sm: 0.1px;
+  --type-track-body-lg: 0.5px;
+  --type-track-body-md: 0.25px;
+  --type-track-body-sm: 0.4px;
+  --type-track-label-lg: 0.1px;
+  --type-track-label-md: 0.5px;
+  --type-track-label-sm: 0.5px;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --line-height-11: calc(15px * var(--text-scale));
-  --line-height-12: 1.33;
-  --line-height-13: 1.54;
-  --line-height-14: calc(18px * var(--text-scale));
-  --line-height-15: calc(21px * var(--text-scale));
-  --line-height-18: 1.33;
-  --line-height-22: 1.27;
-  --line-height-28: 1.14;
-  --line-height-prose: calc(22px * var(--text-scale));
-  --line-height-eyebrow: 1.5;
-  --line-height-support: 1.4;
-  --line-height-row: 1.3;
-  /* Every poster step is set solid. Only the screen title is tighter. */
+  --line-height-prose: calc(24px * var(--text-scale));
   --line-height-solid: 1;
-  --line-height-screen: 0.95;
-  /* Message prose. 14px at 1.6 is the one place this system is generous. */
-  --line-height-body: 1.6;
-  --letter-spacing-11: 0.05em;
-  --letter-spacing-12: 0.005em;
-  --letter-spacing-13: 0;
-  --letter-spacing-14: -0.01em;
-  --letter-spacing-15: -0.005em;
-  --letter-spacing-18: -0.01em;
-  --letter-spacing-22: -0.015em;
-  --letter-spacing-28: -0.02em;
-  /*
-   * The sharp/soft split runs through the type too. Mono metadata opens up;
-   * Inter titles close down. Nothing sits at zero except code.
-   */
-  --letter-spacing-chip: 0.10em;
-  --letter-spacing-count: 0;
-  --letter-spacing-row: -0.005em;
-  --letter-spacing-panel: -0.015em;
-  --letter-spacing-section: -0.035em;
-  --letter-spacing-screen: -0.05em;
-  --letter-spacing-display: -0.055em;
-  /*
-   * One named role for uppercase metadata. `.mesh-command-combobox` group
-   * headers and `.mesh-beta-badge` already referenced this name, which was
-   * never declared, so both silently lost their tracking. Tailwind aliases
-   * tracking-caption, tracking-section, tracking-signal, tracking-control and
-   * tracking-status onto it so the app ships one value instead of two.
-   */
-  --letter-spacing-eyebrow: 0.16em;
 
   /*
-   * Radii. The sharp/soft split is the whole idea: things you *touch* get a
-   * radius, things that *structure* do not. An active room row is a flat
-   * ultramarine rectangle with square corners; the avatar inside it still has
-   * an 8px radius.
+   * The shape scale. Everything you touch has a radius, and --shape-none is
+   * the single exception: full-bleed media clipped by an ancestor that carries
+   * its own radius.
    */
-  --radius-plane: 0;
-  --radius-sm: 4px;
-  --radius-default: 8px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-control: 8px;
-  --radius-panel: 14px;
-  --radius-tile: 8px;
-  --radius-rail-item: 9px;
-  --radius-segment: 7px;
-  --radius-community-rest: 9px;
-  --radius-community-active: 9px;
-  --mesh-radius-tile: 8px;
-  --mesh-radius-card: 14px;
-  --mesh-radius-shell: 8px;
+  --shape-none: 0;
+  --shape-xs: 4px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-lg-inc: 20px;
+  --shape-xl: 28px;
+  --shape-xl-inc: 32px;
+  --shape-full: 100px;
+  --shape-round: 50%;
   --border-width-status: 1px;
-  /* Always 1px, never 2px -- except the trust rail, which is the exception. */
-  --rule-width: 1px;
-  --trust-rail-width: 2px;
-  /*
-   * Werkstatt's active-marker weight. EventView, UnreadDivider, Toast,
-   * SearchBar, and CreateCommunityModal were never carried into Quiet
-   * Structure and still consume this value directly; kept rather than
-   * removed so those call sites keep compiling until they are migrated.
-   */
   --border-width-bar: 3px;
+
+  /*
+   * The elevation ladder. Level 0 is what everything in normal document flow
+   * uses; tone and shape carry structure, so a shadow on a pane, a card or a
+   * list row is a regression rather than a refinement.
+   */
+  --elev-0: none;
+  --elev-1: 0 1px 2px rgb(0 0 0 / .40), 0 1px 3px 1px rgb(0 0 0 / .28);
+  --elev-2: 0 1px 2px rgb(0 0 0 / .40), 0 2px 6px 2px rgb(0 0 0 / .28);
+  --elev-3: 0 1px 3px rgb(0 0 0 / .45), 0 4px 8px 3px rgb(0 0 0 / .30);
+  --elev-4: 0 2px 3px rgb(0 0 0 / .45), 0 6px 10px 4px rgb(0 0 0 / .30);
+  --elev-5: 0 4px 4px rgb(0 0 0 / .45), 0 8px 12px 6px rgb(0 0 0 / .30);
 
   /* Motion reference values */
   --ref-dur-50: 50ms;
@@ -675,7 +500,7 @@
   /*
    * Toast dwell. These are dismissal deadlines, not transitions, so they sit
    * beside the motion roles rather than inside the closed transition scale.
-   * Danger has no dwell: an error is dismissed by a person, not by a clock.
+   * An error has no dwell: it is dismissed by a person, not by a clock.
    */
   --toast-dwell-default: var(--ref-dur-5000);
   --toast-dwell-warning: var(--ref-dur-8000);
@@ -691,30 +516,16 @@
 
   /* Density and component geometry. */
   --density-row-block: 4px;
-  --density-control-sm: 32px;
-  --density-control-md: 36px;
-  --density-control-lg: 44px;
+  --density-control-sm: 40px;
+  --density-control-md: 48px;
+  --density-control-lg: 56px;
   --density-panel-gap: 16px;
-  --density-line-height: var(--line-height-15);
-  /*
-   * The timeline gutter: 44px of right-aligned mono time, the 2px trust rail,
-   * and a 20px gap. It replaces the 112px prose gutter of the earlier draft
-   * and hands roughly 90px back to the conversation.
-   */
-  --message-time-width: 44px;
-  --message-rail-gap: 20px;
-  --message-gutter: calc(
-    var(--message-time-width) + var(--trust-rail-width) + var(--message-rail-gap)
-  );
+  --density-line-height: var(--type-line-body-lg);
   --message-group-gap: 12px;
   --empty-state-icon: 56px;
-  /* Rail selection marker. Matches the channel-list inset marker width. */
-  --community-marker: 3px;
-  --rail-unread-marker-height: 8px;
   --member-list-width: var(--shell-roster-width);
-  --settings-drawer-width: 420px;
-  --route-surface-columns: var(--shell-channel-width) minmax(0, 1fr);
-  --settings-layout-columns: 12rem minmax(0, 1fr);
+  --settings-drawer-width: 300px;
+  --route-surface-columns: var(--shell-list-width) minmax(0, 1fr);
   --device-code-columns: 7rem 1fr;
   --invitation-confirmation-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
   --attachment-name-width: 140px;
@@ -725,41 +536,39 @@
   --content-error-width: 224px;
   --user-panel-height: 56px;
   --conversation-header-height: var(--shell-header-height);
-  --conversation-title-padding-top: 22px;
-  --conversation-title-padding-bottom: 20px;
-  /* What the two above collapse to when the viewport is too short for them. */
-  --conversation-title-padding-compact: 10px;
   --onboarding-shell-height: calc(100vh - 3rem);
   /*
-   * Fixed rather than density-scaled: onboarding is a single narrow column
-   * (the marketing aside and its two-pane grid were removed), so it does not
-   * grow the way the roster and channel columns do at larger densities.
+   * Fixed rather than density-scaled: onboarding is a single narrow column,
+   * so it does not grow the way the roster and list columns do.
    */
   --onboarding-shell-width: 30rem;
   --privacy-table-width: 36rem;
   --voice-controls-label-width: 140px;
   --voice-tile-min-height: 180px;
-  --rail-separator-height: 2px;
 
-  /* Party Room responsive geometry. The base is the 1280 x 720 matrix. */
-  --shell-rail-width: 60px;
-  --shell-channel-width: 250px;
-  --shell-roster-width: 226px;
-  --shell-header-height: 50px;
+  /*
+   * Shell geometry. Every pane is a --shell-pane-radius rounded surface inset
+   * by --shell-pane-gap from the window and from its neighbours, which is why
+   * there is no rule width, no row-number gutter and no message time column
+   * left to measure. The base is the 1280 x 720 matrix.
+   */
+  --shell-rail-width: 88px;
+  --shell-list-width: 340px;
+  --shell-roster-width: 400px;
+  --shell-pane-gap: 12px;
+  --shell-pane-radius: var(--shape-xl);
+  --shell-header-height: 64px;
   --shell-pin-height: 40px;
   --shell-composer-height: 46px;
   --shell-strip-height: 60px;
   --shell-media-max-height: 274px;
-  --shell-conversation-padding: 28px;
-  --shell-channel-row-height: 34px;
-  /* The numeral gutter in every ledger: 01, 02, 03 ... */
-  --row-index-width: 34px;
-  --command-band-padding: 60px;
-  --ledger-row-padding: 8px;
-  --shell-occupant-row-height: 40px;
+  --shell-channel-row-height: 56px;
+  --shell-occupant-row-height: 72px;
   --shell-message-padding-block: 4px;
   --shell-message-measure: 65ch;
   --shell-media-max-width: 960px;
+  --shell-bubble-measure: 62%;
+  --command-band-padding: 60px;
 
   /* Layering */
   --z-base: 0;
@@ -771,17 +580,12 @@
   --z-popover: 60;
   --z-toast: 70;
   --z-tooltip: 80;
-
-  --elev-overlay: 0 4px 0 rgb(var(--ref-black-rgb) / 0.32);
-  --elev-card: none;
-  --elev-inset: none;
 }
 
 @media (min-width: 1366px) {
   :root {
-    --shell-channel-width: 258px;
-    --shell-roster-width: 234px;
-    --shell-header-height: 52px;
+    --shell-list-width: 352px;
+    --shell-roster-width: 412px;
     --shell-composer-height: 48px;
     --shell-strip-height: 64px;
     --shell-media-max-height: 292px;
@@ -790,10 +594,8 @@
 
 @media (min-width: 1600px) {
   :root {
-    --shell-rail-width: 60px;
-    --shell-channel-width: 272px;
-    --shell-roster-width: 250px;
-    --shell-header-height: 56px;
+    --shell-list-width: 368px;
+    --shell-roster-width: 428px;
     --shell-composer-height: 50px;
     --shell-strip-height: 72px;
     --shell-media-max-height: 342px;
@@ -802,9 +604,9 @@
 
 @media (min-width: 1920px) {
   :root {
-    --shell-rail-width: 64px;
-    --shell-channel-width: 288px;
-    --shell-roster-width: 272px;
+    --shell-rail-width: 96px;
+    --shell-list-width: 384px;
+    --shell-roster-width: 448px;
     --shell-composer-height: 52px;
     --shell-media-max-height: 410px;
   }
@@ -812,39 +614,27 @@
 
 @media (min-width: 2560px) {
   :root {
-    --shell-channel-width: 304px;
-    --shell-roster-width: 292px;
+    --shell-list-width: 400px;
+    --shell-roster-width: 468px;
     --shell-strip-height: 76px;
     --shell-media-max-height: 420px;
   }
 }
 
+/*
+ * A hovered or pressed tonal container is the container with its own
+ * foreground laid over it at the state-layer opacity, which is the M3
+ * definition rather than a second and third container token invented by hand.
+ * The declarations above are the conservative WebView fallback; these are the
+ * perceptual derivation, and check-container-contrast.mjs measures both
+ * branches and reports if they disagree.
+ */
 @supports (color: color-mix(in oklch, white, black)) {
   :root {
-    --accent-container: color-mix(in oklch, var(--accent) 14%, transparent);
-    --accent-container-hover: color-mix(in oklch, var(--accent) 20%, transparent);
-    --accent-container-active: color-mix(in oklch, var(--accent) 28%, transparent);
-    --accent-container-line: color-mix(in oklch, var(--accent) 78%, transparent);
-    --success-container: color-mix(in oklch, var(--status-success) 14%, transparent);
-    --success-container-hover: color-mix(in oklch, var(--status-success) 20%, transparent);
-    --success-container-active: color-mix(in oklch, var(--status-success) 28%, transparent);
-    --success-container-line: color-mix(in oklch, var(--status-success) 78%, transparent);
-    --warning-container: color-mix(in oklch, var(--status-warning) 14%, transparent);
-    --warning-container-hover: color-mix(in oklch, var(--status-warning) 20%, transparent);
-    --warning-container-active: color-mix(in oklch, var(--status-warning) 28%, transparent);
-    --warning-container-line: color-mix(in oklch, var(--status-warning) 78%, transparent);
-    --danger-container: color-mix(in oklch, var(--status-danger) 14%, transparent);
-    --danger-container-hover: color-mix(in oklch, var(--status-danger) 20%, transparent);
-    --danger-container-active: color-mix(in oklch, var(--status-danger) 28%, transparent);
-    --danger-container-line: color-mix(in oklch, var(--status-danger) 78%, transparent);
-    --info-container: color-mix(in oklch, var(--status-info) 14%, transparent);
-    --info-container-hover: color-mix(in oklch, var(--status-info) 20%, transparent);
-    --info-container-active: color-mix(in oklch, var(--status-info) 28%, transparent);
-    --info-container-line: color-mix(in oklch, var(--status-info) 78%, transparent);
-    --status-success-hover: color-mix(in oklch, var(--status-success) 88%, var(--content-primary));
-    --status-danger-hover: color-mix(in oklch, var(--status-danger) 88%, var(--content-primary));
-    --status-warning-hover: color-mix(in oklch, var(--status-warning) 88%, var(--content-primary));
-    --status-info-hover: color-mix(in oklch, var(--status-info) 88%, var(--content-primary));
+    --primary-container-line: color-mix(in oklch, var(--primary) 78%, transparent);
+    --secondary-container-line: color-mix(in oklch, var(--primary) 78%, transparent);
+    --error-container-line: color-mix(in oklch, var(--error) 78%, transparent);
+    --marker-container-line: color-mix(in oklch, var(--marker) 78%, transparent);
   }
 }
 
@@ -860,171 +650,184 @@
    * Every semantic role is restated here rather than redirected through an
    * alias tier. Inherited custom properties have already been computed on
    * their parent, so a nested theme preview can only resolve against its own
-   * palette if the roles themselves are declared inside it -- which is also
-   * why an alias tier between the references and the roles bought nothing and
-   * shipped a third copy of every colour.
-  */
-  --surface-canvas: var(--ref-quiet-light-canvas);
-  --surface-rail: var(--ref-quiet-light-rail);
-  --surface-sunken: var(--ref-quiet-light-rail);
-  --surface-sunken-rgb: var(--ref-quiet-light-rail-rgb);
-  --surface-sidebar: var(--ref-quiet-light-canvas);
-  --surface-sidebar-rgb: var(--ref-quiet-light-canvas-rgb);
-  --surface-base: var(--ref-quiet-light-canvas);
-  --surface-base-rgb: var(--ref-quiet-light-canvas-rgb);
-  --surface-raised: var(--ref-white);
-  --surface-raised-rgb: var(--ref-white-rgb);
-  /*
-   * The hairline has no automatic light-theme equivalent. Alpha-white over
-   * near-black is a lightening wash; over a pale canvas the same idea has to
-   * become an alpha-black one, re-derived against this ground rather than
-   * flipped.
+   * palette if the roles themselves are declared inside it.
+   *
+   * Light is a complete theme, not dark flipped. Its neutral ramp runs the
+   * other way and its three colour families drop to the tone-40 step, because
+   * a colour that carries text on a pale ground is not the same colour as one
+   * that glows on a dark one.
    */
-  --surface-fill: rgb(var(--ref-black-rgb) / 0.04);
-  --surface-fill-hover: rgb(var(--ref-black-rgb) / 0.07);
-  --border-structural: rgb(var(--ref-black-rgb) / 0.10);
-  --border-row: rgb(var(--ref-black-rgb) / 0.06);
-  --surface-overlay: var(--ref-white);
-  --surface-overlay-rgb: var(--ref-white-rgb);
-  --surface-hover: var(--ref-quiet-light-hover);
-  --surface-hover-rgb: var(--ref-quiet-light-hover-rgb);
-  --surface-active: var(--ref-quiet-light-active);
-  --surface-active-rgb: var(--ref-quiet-light-active-rgb);
-  --surface-selected: var(--ref-quiet-light-active);
-  --surface-selected-rgb: var(--ref-quiet-light-active-rgb);
-  --content-normal: var(--ref-quiet-light-primary);
-  --content-normal-rgb: var(--ref-quiet-light-primary-rgb);
-  --content-primary: var(--ref-quiet-light-primary);
-  --content-primary-rgb: var(--ref-quiet-light-primary-rgb);
-  --content-body: var(--ref-quiet-light-body);
-  --content-body-rgb: var(--ref-quiet-light-body-rgb);
-  --content-secondary: var(--ref-quiet-light-secondary);
-  --content-secondary-rgb: var(--ref-quiet-light-secondary-rgb);
-  --content-muted: var(--ref-quiet-light-secondary);
-  --content-muted-rgb: var(--ref-quiet-light-secondary-rgb);
-  --content-tertiary: var(--ref-quiet-light-tertiary);
-  --content-tertiary-rgb: var(--ref-quiet-light-tertiary-rgb);
-  --border-default: var(--ref-quiet-light-rule);
-  --border-default-rgb: var(--ref-quiet-light-rule-rgb);
-  --border-emphasis: var(--ref-quiet-light-rule);
-  --border-emphasis-rgb: var(--ref-quiet-light-rule-rgb);
-  --border-subtle: var(--border-row);
-  --border-strong: var(--ref-quiet-light-rule);
-  --border-control: var(--ref-quiet-light-rule);
-  --border-control-rgb: var(--ref-quiet-light-rule-rgb);
-  --border-focus: var(--ref-quiet-light-chrome);
-  --border-focus-rgb: var(--ref-quiet-light-chrome-rgb);
-  --accent: var(--ref-quiet-light-ultramarine);
-  --accent-rgb: var(--ref-quiet-light-ultramarine-rgb);
-  --accent-hover: var(--ref-accent-ocean-light-10);
-  --accent-hover-rgb: var(--ref-accent-ocean-light-10-rgb);
-  --accent-muted: var(--ref-accent-ocean-light-8);
-  --accent-muted-rgb: var(--ref-accent-ocean-light-8-rgb);
-  --status-success: var(--ref-quiet-light-green);
-  --status-success-rgb: var(--ref-quiet-light-green-rgb);
-  --content-link-rgb: var(--ref-quiet-light-ultramarine-rgb);
-  --content-link: var(--ref-quiet-light-ultramarine);
+  --surface-rgb: var(--ref-nl-98-rgb);
+  --surface: var(--ref-nl-98);
+  --surface-container-lowest-rgb: var(--ref-nl-100-rgb);
+  --surface-container-lowest: var(--ref-nl-100);
+  --surface-container-low-rgb: var(--ref-nl-96-rgb);
+  --surface-container-low: var(--ref-nl-96);
+  --surface-container-rgb: var(--ref-nl-94-rgb);
+  --surface-container: var(--ref-nl-94);
+  --surface-container-high-rgb: var(--ref-nl-92-rgb);
+  --surface-container-high: var(--ref-nl-92);
+  --surface-container-highest-rgb: var(--ref-nl-90-rgb);
+  --surface-container-highest: var(--ref-nl-90);
+  --on-surface-rgb: var(--ref-nl-10-rgb);
+  --on-surface: var(--ref-nl-10);
+  --on-surface-variant-rgb: var(--ref-nl-30-rgb);
+  --on-surface-variant: var(--ref-nl-30);
+  --outline-rgb: var(--ref-nl-50-rgb);
+  --outline: var(--ref-nl-50);
+  --outline-variant-rgb: var(--ref-nl-80-rgb);
+  --outline-variant: var(--ref-nl-80);
+  --inverse-surface-rgb: var(--ref-n-14-rgb);
+  --inverse-surface: var(--ref-n-14);
+  --on-inverse-surface-rgb: var(--ref-nl-98-rgb);
+  --on-inverse-surface: var(--ref-nl-98);
+  --primary-rgb: var(--ref-azure-40-rgb);
+  --primary: var(--ref-azure-40);
+  --on-primary-rgb: var(--ref-nl-100-rgb);
+  --on-primary: var(--ref-nl-100);
+  --primary-container-rgb: var(--ref-azure-90-rgb);
+  --primary-container: var(--ref-azure-90);
+  --on-primary-container-rgb: var(--ref-azure-20-rgb);
+  --on-primary-container: var(--ref-azure-20);
+  --secondary-container-rgb: var(--ref-azure-92-rgb);
+  --secondary-container: var(--ref-azure-92);
+  --on-secondary-container-rgb: var(--ref-azure-20-rgb);
+  --on-secondary-container: var(--ref-azure-20);
+  --error-rgb: var(--ref-coral-40-rgb);
+  --error: var(--ref-coral-40);
+  --on-error-rgb: var(--ref-nl-100-rgb);
+  --on-error: var(--ref-nl-100);
+  --error-container-rgb: var(--ref-coral-90-rgb);
+  --error-container: var(--ref-coral-90);
+  --on-error-container-rgb: var(--ref-coral-20-rgb);
+  --on-error-container: var(--ref-coral-20);
+  --marker-rgb: var(--ref-amber-40-rgb);
+  --marker: var(--ref-amber-40);
+  --on-marker-rgb: var(--ref-nl-100-rgb);
+  --on-marker: var(--ref-nl-100);
+  --marker-container-rgb: var(--ref-amber-90-rgb);
+  --marker-container: var(--ref-amber-90);
+  --on-marker-container-rgb: var(--ref-amber-20-rgb);
+  --on-marker-container: var(--ref-amber-20);
   /*
-   * Light accent fills are dark, so accent-borne text flips to white. The dark
-   * theme keeps near-black on its pale accents.
+   * A state layer over a pale ground has to darken rather than lighten, so the
+   * layer colour follows --on-surface into the light theme instead of staying
+   * white. The opacities themselves are unchanged.
    */
-  --content-on-accent-rgb: var(--ref-white-rgb);
-  --content-on-accent: var(--ref-white);
-  --content-on-status-rgb: var(--ref-white-rgb);
-  --content-on-status: var(--ref-white);
-  --status-danger-rgb: var(--ref-quiet-light-vermilion-rgb);
-  --status-danger: var(--ref-quiet-light-vermilion);
-  --status-warning-rgb: var(--ref-quiet-light-chrome-rgb);
-  --status-warning: var(--ref-quiet-light-chrome);
-  --status-info-rgb: var(--ref-quiet-light-ultramarine-rgb);
-  --status-info: var(--ref-quiet-light-ultramarine);
-  --elev-overlay: 0 4px 0 rgb(var(--ref-black-rgb) / 0.14);
-  --elev-card: none;
-  --elev-inset: none;
+  --state-layer-hover: rgb(var(--on-surface-rgb) / var(--state-hover));
+  --state-layer-focus: rgb(var(--on-surface-rgb) / var(--state-focus));
+  --state-layer-pressed: rgb(var(--on-surface-rgb) / var(--state-pressed));
+  --border-focus-rgb: var(--ref-amber-40-rgb);
+  --border-focus: var(--ref-amber-40);
+  --surface-scrim: rgb(var(--ref-nl-10-rgb) / 0.48);
+  --presence-offline-rgb: var(--ref-nl-50-rgb);
+  --presence-offline: var(--ref-nl-50);
+  --scrollbar: var(--ref-nl-80);
+  --scrollbar-hover: var(--ref-nl-50);
+  --on-avatar-rgb: var(--ref-nl-10-rgb);
+  --on-avatar: var(--ref-nl-10);
+  --primary-container-hover: var(--ref-azure-90-layer);
+  --primary-container-active: var(--ref-azure-90-layer);
+  --primary-container-line: rgb(var(--primary-rgb) / 0.78);
+  --secondary-container-hover: var(--ref-azure-92-layer);
+  --secondary-container-active: var(--ref-azure-92-layer);
+  --secondary-container-line: rgb(var(--primary-rgb) / 0.78);
+  --error-container-hover: var(--ref-coral-90-layer);
+  --error-container-active: var(--ref-coral-90-layer);
+  --error-container-line: rgb(var(--error-rgb) / 0.78);
+  --marker-container-hover: var(--ref-amber-90-layer);
+  --marker-container-active: var(--ref-amber-90-layer);
+  --marker-container-line: rgb(var(--marker-rgb) / 0.78);
 }
 
+@supports (color: color-mix(in oklch, white, black)) {
+  :root[data-theme='light'],
+  [data-theme='light'] {
+    --primary-container-line: color-mix(in oklch, var(--primary) 78%, transparent);
+    --secondary-container-line: color-mix(in oklch, var(--primary) 78%, transparent);
+    --error-container-line: color-mix(in oklch, var(--error) 78%, transparent);
+    --marker-container-line: color-mix(in oklch, var(--marker) 78%, transparent);
+  }
+}
+
+/*
+ * High contrast is a complete functional theme, not an inversion. It keeps
+ * every M3 role, pushes each on-colour to pure white or pure black, and pairs
+ * every container at 7:1. There are no decorative boundaries here at all: a
+ * boundary that exists is drawn at full strength, because the point of this
+ * theme is that nothing structural is left to be inferred from a wash.
+ */
 :root[data-theme='high-contrast'],
 :root[data-contrast='high'],
 [data-theme='high-contrast'],
 [data-contrast='high'] {
   color-scheme: dark;
-  --surface-canvas: var(--ref-black);
-  --surface-rail: var(--ref-black);
-  --surface-sunken-rgb: var(--ref-black-rgb);
-  --surface-sunken: var(--ref-black);
-  --surface-sidebar-rgb: var(--ref-black-rgb);
-  --surface-sidebar: var(--ref-black);
-  --surface-base-rgb: var(--ref-black-rgb);
-  --surface-base: var(--ref-black);
-  --surface-raised-rgb: var(--ref-neutral-2-rgb);
-  --surface-raised: var(--ref-neutral-2);
-  --surface-overlay-rgb: var(--surface-raised-rgb);
-  --surface-overlay: var(--surface-raised);
-  --surface-hover-rgb: var(--ref-neutral-5-rgb);
-  --surface-hover: var(--ref-neutral-5);
-  --surface-active-rgb: var(--ref-neutral-7-rgb);
-  --surface-active: var(--ref-neutral-7);
-  --surface-selected-rgb: var(--ref-neutral-7-rgb);
-  --surface-selected: var(--ref-neutral-7);
-  --content-normal-rgb: var(--ref-white-rgb);
-  --content-normal: var(--ref-white);
-  --content-primary-rgb: var(--ref-white-rgb);
-  --content-primary: var(--ref-white);
-  --content-secondary-rgb: var(--ref-white-rgb);
-  --content-secondary: var(--ref-white);
-  --content-muted-rgb: var(--ref-neutral-12-rgb);
-  --content-muted: var(--ref-neutral-12);
-  --content-body-rgb: var(--ref-white-rgb);
-  --content-body: var(--ref-white);
-  --content-tertiary-rgb: var(--ref-neutral-12-rgb);
-  --content-tertiary: var(--ref-neutral-12);
-  --border-default-rgb: var(--ref-white-rgb);
-  --border-default: var(--ref-white);
-  --border-emphasis-rgb: var(--ref-white-rgb);
-  --border-emphasis: var(--ref-white);
-  --border-subtle: rgb(var(--ref-white-rgb) / 0.42);
-  --border-strong: rgb(var(--ref-white-rgb) / 0.72);
-  /*
-   * High contrast has no decorative hairlines. A boundary that exists at all
-   * is drawn at full strength, because the whole point of this theme is that
-   * nothing structural is left to be inferred from a 1.19:1 wash.
-   */
-  --border-structural: rgb(var(--ref-white-rgb) / 0.72);
-  --border-row: rgb(var(--ref-white-rgb) / 0.42);
-  --surface-fill: var(--ref-neutral-5);
-  --surface-fill-hover: var(--ref-neutral-7);
-  --content-on-accent-rgb: var(--ref-black-rgb);
-  --content-on-accent: var(--ref-black);
-  --accent-container: var(--accent);
-  --accent-container-hover: var(--accent-hover);
-  --accent-container-active: var(--accent-muted);
-  --accent-container-line: var(--ref-white);
-  /*
-   * High contrast turns every container into a solid fill, so the paired
-   * foreground has to flip with it. Without this, accent-on-accent text is
-   * invisible wherever a container token carries a label.
-   */
-  --accent-on-container: var(--ref-black);
-  --success-container: var(--status-success);
-  --success-container-hover: var(--status-success);
-  --success-container-active: var(--status-success);
-  --success-container-line: var(--ref-white);
-  --success-on-container: var(--ref-black);
-  --warning-container: var(--status-warning);
-  --warning-container-hover: var(--status-warning);
-  --warning-container-active: var(--status-warning);
-  --warning-container-line: var(--ref-white);
-  --warning-on-container: var(--ref-black);
-  --danger-container: var(--status-danger);
-  --danger-container-hover: var(--status-danger);
-  --danger-container-active: var(--status-danger);
-  --danger-container-line: var(--ref-white);
-  --danger-on-container: var(--ref-black);
-  --info-container: var(--status-info);
-  --info-container-hover: var(--status-info);
-  --info-container-active: var(--status-info);
-  --info-container-line: var(--ref-white);
-  --info-on-container: var(--ref-black);
+  --surface-rgb: var(--ref-black-rgb);
+  --surface: var(--ref-black);
+  --surface-container-lowest-rgb: var(--ref-black-rgb);
+  --surface-container-lowest: var(--ref-black);
+  --surface-container-low-rgb: var(--ref-hc-low-rgb);
+  --surface-container-low: var(--ref-hc-low);
+  --surface-container-rgb: var(--ref-hc-container-rgb);
+  --surface-container: var(--ref-hc-container);
+  --surface-container-high-rgb: var(--ref-hc-high-rgb);
+  --surface-container-high: var(--ref-hc-high);
+  --surface-container-highest-rgb: var(--ref-hc-highest-rgb);
+  --surface-container-highest: var(--ref-hc-highest);
+  --on-surface-rgb: var(--ref-white-rgb);
+  --on-surface: var(--ref-white);
+  --on-surface-variant-rgb: var(--ref-white-rgb);
+  --on-surface-variant: var(--ref-white);
+  --outline-rgb: var(--ref-white-rgb);
+  --outline: var(--ref-white);
+  --outline-variant-rgb: var(--ref-hc-outline-variant-rgb);
+  --outline-variant: var(--ref-hc-outline-variant);
+  --inverse-surface-rgb: var(--ref-white-rgb);
+  --inverse-surface: var(--ref-white);
+  --on-inverse-surface-rgb: var(--ref-black-rgb);
+  --on-inverse-surface: var(--ref-black);
+  --primary-rgb: var(--ref-hc-azure-rgb);
+  --primary: var(--ref-hc-azure);
+  --on-primary-rgb: var(--ref-black-rgb);
+  --on-primary: var(--ref-black);
+  --primary-container-rgb: var(--ref-hc-azure-container-rgb);
+  --primary-container: var(--ref-hc-azure-container);
+  --on-primary-container-rgb: var(--ref-white-rgb);
+  --on-primary-container: var(--ref-white);
+  --secondary-container-rgb: var(--ref-hc-azure-secondary-rgb);
+  --secondary-container: var(--ref-hc-azure-secondary);
+  --on-secondary-container-rgb: var(--ref-white-rgb);
+  --on-secondary-container: var(--ref-white);
+  --error-rgb: var(--ref-hc-coral-rgb);
+  --error: var(--ref-hc-coral);
+  --on-error-rgb: var(--ref-black-rgb);
+  --on-error: var(--ref-black);
+  --error-container-rgb: var(--ref-hc-coral-container-rgb);
+  --error-container: var(--ref-hc-coral-container);
+  --on-error-container-rgb: var(--ref-white-rgb);
+  --on-error-container: var(--ref-white);
+  --marker-rgb: var(--ref-hc-amber-rgb);
+  --marker: var(--ref-hc-amber);
+  --on-marker-rgb: var(--ref-black-rgb);
+  --on-marker: var(--ref-black);
+  --marker-container-rgb: var(--ref-hc-amber-container-rgb);
+  --marker-container: var(--ref-hc-amber-container);
+  --on-marker-container-rgb: var(--ref-white-rgb);
+  --on-marker-container: var(--ref-white);
+  --border-focus-rgb: var(--ref-hc-amber-rgb);
+  --border-focus: var(--ref-hc-amber);
+  --primary-container-line: var(--ref-white);
+  --secondary-container-line: var(--ref-white);
+  --error-container-line: var(--ref-white);
+  --marker-container-line: var(--ref-white);
+  --primary-container-hover: var(--primary-container);
+  --primary-container-active: var(--primary-container);
+  --secondary-container-hover: var(--secondary-container);
+  --secondary-container-active: var(--secondary-container);
+  --error-container-hover: var(--error-container);
+  --error-container-active: var(--error-container);
+  --marker-container-hover: var(--marker-container);
+  --marker-container-active: var(--marker-container);
   /* Keep initials readable when high contrast switches avatar text to black. */
   --avatar-sand: var(--ref-white);
   --avatar-blue: var(--ref-white);
@@ -1036,66 +839,85 @@
   --avatar-emerald: var(--ref-white);
   --avatar-yellow: var(--ref-white);
   --avatar-cyan: var(--ref-white);
+  --on-avatar-rgb: var(--ref-black-rgb);
+  --on-avatar: var(--ref-black);
 }
 
+/*
+ * A selected accent re-points --primary and the two containers built from it.
+ * It does not introduce a fourth colour job: coral still means exception and
+ * amber still means pinned whichever accent somebody picks.
+ */
 :root[data-accent='sand'],
 [data-accent='sand'] {
-  --accent-rgb: var(--ref-accent-9-rgb);
-  --accent: var(--ref-accent-9);
-  --accent-hover-rgb: var(--ref-accent-10-rgb);
-  --accent-hover: var(--ref-accent-10);
-  --accent-muted-rgb: var(--ref-accent-8-rgb);
-  --accent-muted: var(--ref-accent-8);
+  --primary-rgb: var(--ref-accent-sand-9-rgb);
+  --primary: var(--ref-accent-sand-9);
+  --on-primary-rgb: var(--ref-n-0-rgb);
+  --on-primary: var(--ref-n-0);
+  --primary-container-rgb: var(--ref-accent-sand-8-rgb);
+  --primary-container: var(--ref-accent-sand-8);
+  --on-primary-container-rgb: var(--ref-accent-sand-10-rgb);
+  --on-primary-container: var(--ref-accent-sand-10);
 }
 
 :root[data-accent='ocean'],
 [data-accent='ocean'] {
-  --accent-rgb: var(--ref-accent-ocean-9-rgb);
-  --accent: var(--ref-accent-ocean-9);
-  --accent-hover-rgb: var(--ref-accent-ocean-10-rgb);
-  --accent-hover: var(--ref-accent-ocean-10);
-  --accent-muted-rgb: var(--ref-accent-ocean-8-rgb);
-  --accent-muted: var(--ref-accent-ocean-8);
+  --primary-rgb: var(--ref-accent-ocean-9-rgb);
+  --primary: var(--ref-accent-ocean-9);
+  --on-primary-rgb: var(--ref-azure-20-rgb);
+  --on-primary: var(--ref-azure-20);
+  --primary-container-rgb: var(--ref-accent-ocean-8-rgb);
+  --primary-container: var(--ref-accent-ocean-8);
+  --on-primary-container-rgb: var(--ref-accent-ocean-10-rgb);
+  --on-primary-container: var(--ref-accent-ocean-10);
 }
 
 :root[data-accent='violet'],
 [data-accent='violet'] {
-  --accent-rgb: var(--ref-accent-violet-9-rgb);
-  --accent: var(--ref-accent-violet-9);
-  --accent-hover-rgb: var(--ref-accent-violet-10-rgb);
-  --accent-hover: var(--ref-accent-violet-10);
-  --accent-muted-rgb: var(--ref-accent-violet-8-rgb);
-  --accent-muted: var(--ref-accent-violet-8);
+  --primary-rgb: var(--ref-accent-violet-9-rgb);
+  --primary: var(--ref-accent-violet-9);
+  --on-primary-rgb: var(--ref-n-0-rgb);
+  --on-primary: var(--ref-n-0);
+  --primary-container-rgb: var(--ref-accent-violet-8-rgb);
+  --primary-container: var(--ref-accent-violet-8);
+  --on-primary-container-rgb: var(--ref-accent-violet-10-rgb);
+  --on-primary-container: var(--ref-accent-violet-10);
 }
 
 :root[data-accent='forest'],
 [data-accent='forest'] {
-  --accent-rgb: var(--ref-accent-forest-9-rgb);
-  --accent: var(--ref-accent-forest-9);
-  --accent-hover-rgb: var(--ref-accent-forest-10-rgb);
-  --accent-hover: var(--ref-accent-forest-10);
-  --accent-muted-rgb: var(--ref-accent-forest-8-rgb);
-  --accent-muted: var(--ref-accent-forest-8);
+  --primary-rgb: var(--ref-accent-forest-9-rgb);
+  --primary: var(--ref-accent-forest-9);
+  --on-primary-rgb: var(--ref-n-0-rgb);
+  --on-primary: var(--ref-n-0);
+  --primary-container-rgb: var(--ref-accent-forest-8-rgb);
+  --primary-container: var(--ref-accent-forest-8);
+  --on-primary-container-rgb: var(--ref-accent-forest-10-rgb);
+  --on-primary-container: var(--ref-accent-forest-10);
 }
 
 :root[data-accent='ember'],
 [data-accent='ember'] {
-  --accent-rgb: var(--ref-accent-ember-9-rgb);
-  --accent: var(--ref-accent-ember-9);
-  --accent-hover-rgb: var(--ref-accent-ember-10-rgb);
-  --accent-hover: var(--ref-accent-ember-10);
-  --accent-muted-rgb: var(--ref-accent-ember-8-rgb);
-  --accent-muted: var(--ref-accent-ember-8);
+  --primary-rgb: var(--ref-accent-ember-9-rgb);
+  --primary: var(--ref-accent-ember-9);
+  --on-primary-rgb: var(--ref-coral-20-rgb);
+  --on-primary: var(--ref-coral-20);
+  --primary-container-rgb: var(--ref-accent-ember-8-rgb);
+  --primary-container: var(--ref-accent-ember-8);
+  --on-primary-container-rgb: var(--ref-accent-ember-10-rgb);
+  --on-primary-container: var(--ref-accent-ember-10);
 }
 
 :root[data-accent='rose'],
 [data-accent='rose'] {
-  --accent-rgb: var(--ref-accent-rose-9-rgb);
-  --accent: var(--ref-accent-rose-9);
-  --accent-hover-rgb: var(--ref-accent-rose-10-rgb);
-  --accent-hover: var(--ref-accent-rose-10);
-  --accent-muted-rgb: var(--ref-accent-rose-8-rgb);
-  --accent-muted: var(--ref-accent-rose-8);
+  --primary-rgb: var(--ref-accent-rose-9-rgb);
+  --primary: var(--ref-accent-rose-9);
+  --on-primary-rgb: var(--ref-n-0-rgb);
+  --on-primary: var(--ref-n-0);
+  --primary-container-rgb: var(--ref-accent-rose-8-rgb);
+  --primary-container: var(--ref-accent-rose-8);
+  --on-primary-container-rgb: var(--ref-accent-rose-10-rgb);
+  --on-primary-container: var(--ref-accent-rose-10);
 }
 
 /*
@@ -1105,79 +927,86 @@
  */
 :root[data-theme='light'][data-accent='sand'],
 [data-theme='light'] [data-accent='sand'] {
-  --accent-rgb: var(--ref-accent-sand-light-9-rgb);
-  --accent: var(--ref-accent-sand-light-9);
-  --accent-hover-rgb: var(--ref-accent-sand-light-10-rgb);
-  --accent-hover: var(--ref-accent-sand-light-10);
-  --accent-muted-rgb: var(--ref-accent-sand-light-8-rgb);
-  --accent-muted: var(--ref-accent-sand-light-8);
+  --primary-rgb: var(--ref-accent-sand-light-9-rgb);
+  --primary: var(--ref-accent-sand-light-9);
+  --on-primary-rgb: var(--ref-nl-100-rgb);
+  --on-primary: var(--ref-nl-100);
+  --primary-container-rgb: var(--ref-accent-sand-light-10-rgb);
+  --primary-container: var(--ref-accent-sand-light-10);
+  --on-primary-container-rgb: var(--ref-amber-20-rgb);
+  --on-primary-container: var(--ref-amber-20);
 }
 
 :root[data-theme='light'][data-accent='ocean'],
 [data-theme='light'] [data-accent='ocean'] {
-  --accent-rgb: var(--ref-accent-ocean-light-9-rgb);
-  --accent: var(--ref-accent-ocean-light-9);
-  --accent-hover-rgb: var(--ref-accent-ocean-light-10-rgb);
-  --accent-hover: var(--ref-accent-ocean-light-10);
-  --accent-muted-rgb: var(--ref-accent-ocean-light-8-rgb);
-  --accent-muted: var(--ref-accent-ocean-light-8);
+  --primary-rgb: var(--ref-accent-ocean-light-9-rgb);
+  --primary: var(--ref-accent-ocean-light-9);
+  --on-primary-rgb: var(--ref-nl-100-rgb);
+  --on-primary: var(--ref-nl-100);
+  --primary-container-rgb: var(--ref-accent-ocean-light-10-rgb);
+  --primary-container: var(--ref-accent-ocean-light-10);
+  --on-primary-container-rgb: var(--ref-azure-20-rgb);
+  --on-primary-container: var(--ref-azure-20);
 }
 
 :root[data-theme='light'][data-accent='violet'],
 [data-theme='light'] [data-accent='violet'] {
-  --accent-rgb: var(--ref-accent-violet-light-9-rgb);
-  --accent: var(--ref-accent-violet-light-9);
-  --accent-hover-rgb: var(--ref-accent-violet-light-10-rgb);
-  --accent-hover: var(--ref-accent-violet-light-10);
-  --accent-muted-rgb: var(--ref-accent-violet-light-8-rgb);
-  --accent-muted: var(--ref-accent-violet-light-8);
+  --primary-rgb: var(--ref-accent-violet-light-9-rgb);
+  --primary: var(--ref-accent-violet-light-9);
+  --on-primary-rgb: var(--ref-nl-100-rgb);
+  --on-primary: var(--ref-nl-100);
+  --primary-container-rgb: var(--ref-accent-violet-light-10-rgb);
+  --primary-container: var(--ref-accent-violet-light-10);
+  --on-primary-container-rgb: var(--ref-nl-10-rgb);
+  --on-primary-container: var(--ref-nl-10);
 }
 
 :root[data-theme='light'][data-accent='forest'],
 [data-theme='light'] [data-accent='forest'] {
-  --accent-rgb: var(--ref-accent-forest-light-9-rgb);
-  --accent: var(--ref-accent-forest-light-9);
-  --accent-hover-rgb: var(--ref-accent-forest-light-10-rgb);
-  --accent-hover: var(--ref-accent-forest-light-10);
-  --accent-muted-rgb: var(--ref-accent-forest-light-8-rgb);
-  --accent-muted: var(--ref-accent-forest-light-8);
+  --primary-rgb: var(--ref-accent-forest-light-9-rgb);
+  --primary: var(--ref-accent-forest-light-9);
+  --on-primary-rgb: var(--ref-nl-100-rgb);
+  --on-primary: var(--ref-nl-100);
+  --primary-container-rgb: var(--ref-accent-forest-light-10-rgb);
+  --primary-container: var(--ref-accent-forest-light-10);
+  --on-primary-container-rgb: var(--ref-nl-10-rgb);
+  --on-primary-container: var(--ref-nl-10);
 }
 
 :root[data-theme='light'][data-accent='ember'],
 [data-theme='light'] [data-accent='ember'] {
-  --accent-rgb: var(--ref-accent-ember-light-9-rgb);
-  --accent: var(--ref-accent-ember-light-9);
-  --accent-hover-rgb: var(--ref-accent-ember-light-10-rgb);
-  --accent-hover: var(--ref-accent-ember-light-10);
-  --accent-muted-rgb: var(--ref-accent-ember-light-8-rgb);
-  --accent-muted: var(--ref-accent-ember-light-8);
+  --primary-rgb: var(--ref-accent-ember-light-9-rgb);
+  --primary: var(--ref-accent-ember-light-9);
+  --on-primary-rgb: var(--ref-nl-100-rgb);
+  --on-primary: var(--ref-nl-100);
+  --primary-container-rgb: var(--ref-accent-ember-light-10-rgb);
+  --primary-container: var(--ref-accent-ember-light-10);
+  --on-primary-container-rgb: var(--ref-coral-20-rgb);
+  --on-primary-container: var(--ref-coral-20);
 }
 
 :root[data-theme='light'][data-accent='rose'],
 [data-theme='light'] [data-accent='rose'] {
-  --accent-rgb: var(--ref-accent-rose-light-9-rgb);
-  --accent: var(--ref-accent-rose-light-9);
-  --accent-hover-rgb: var(--ref-accent-rose-light-10-rgb);
-  --accent-hover: var(--ref-accent-rose-light-10);
-  --accent-muted-rgb: var(--ref-accent-rose-light-8-rgb);
-  --accent-muted: var(--ref-accent-rose-light-8);
+  --primary-rgb: var(--ref-accent-rose-light-9-rgb);
+  --primary: var(--ref-accent-rose-light-9);
+  --on-primary-rgb: var(--ref-nl-100-rgb);
+  --on-primary: var(--ref-nl-100);
+  --primary-container-rgb: var(--ref-accent-rose-light-10-rgb);
+  --primary-container: var(--ref-accent-rose-light-10);
+  --on-primary-container-rgb: var(--ref-nl-10-rgb);
+  --on-primary-container: var(--ref-nl-10);
 }
 
 /*
- * The light accent is dark enough to read as body text, so the .text-accent
- * override below can resolve to the accent itself rather than a separate brown.
+ * Density changes row padding, panel gaps, and line height. It does not remove
+ * labels, focus indicators, or status, and no control drops below 32px in any
+ * density -- the M3 defaults are 40/48/56 and compact trims from there.
  */
-:root[data-theme='light'],
-[data-theme='light'] {
-  --content-accent-rgb: var(--accent-rgb);
-  --content-accent: var(--accent);
-}
-
 :root[data-density='compact'] {
   --density-row-block: 4px;
   --density-control-sm: 32px;
-  --density-control-md: 32px;
-  --density-control-lg: 40px;
+  --density-control-md: 40px;
+  --density-control-lg: 48px;
   --density-panel-gap: 12px;
   --density-line-height: 1.43;
   --message-group-gap: 12px;
@@ -1185,19 +1014,19 @@
 
 :root[data-density='default'] {
   --density-row-block: 4px;
-  --density-control-sm: 32px;
-  --density-control-md: 36px;
-  --density-control-lg: 44px;
+  --density-control-sm: 40px;
+  --density-control-md: 48px;
+  --density-control-lg: 56px;
   --density-panel-gap: 16px;
-  --density-line-height: var(--line-height-15);
+  --density-line-height: var(--type-line-body-lg);
   --message-group-gap: 12px;
 }
 
 :root[data-density='comfortable'] {
   --density-row-block: 8px;
-  --density-control-sm: 36px;
-  --density-control-md: 40px;
-  --density-control-lg: 48px;
+  --density-control-sm: 48px;
+  --density-control-md: 56px;
+  --density-control-lg: 64px;
   --density-panel-gap: 20px;
   --density-line-height: 1.71;
   --message-group-gap: 20px;
@@ -1224,12 +1053,12 @@ body,
 body {
   position: relative;
   overflow: hidden;
-  background: var(--bg-primary);
-  color: var(--text-normal);
+  background: var(--surface);
+  color: var(--on-surface);
   font-family: var(--font-sans);
-  font-size: var(--font-size-base);
+  font-size: var(--type-body-lg);
   line-height: var(--density-line-height);
-  letter-spacing: var(--letter-spacing-15);
+  letter-spacing: var(--type-track-body-lg);
   font-optical-sizing: auto;
 }
 
@@ -1238,17 +1067,17 @@ time,
 .badge-count,
 .member-count,
 .file-size {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-2xs);
+  font-family: var(--font-code);
+  font-size: var(--type-label-sm);
   font-weight: var(--font-weight-medium);
-  line-height: var(--line-height-11);
-  letter-spacing: var(--letter-spacing-11);
+  line-height: var(--type-line-label-sm);
+  letter-spacing: var(--type-track-label-sm);
   font-feature-settings: 'tnum' 1, 'calt' 1;
 }
 
 .identifier,
 code {
-  font-family: var(--font-mono);
+  font-family: var(--font-code);
   font-feature-settings: 'ss02' 1, 'zero' 1, 'tnum' 1, 'calt' 0, 'liga' 0;
 }
 
@@ -1282,7 +1111,7 @@ code {
 }
 
 ::selection {
-  background: rgb(var(--status-info-rgb) / 0.3);
+  background: rgb(var(--primary-rgb) / 0.3);
 }
 
 [data-tauri-drag-region] {
@@ -1307,7 +1136,7 @@ textarea {
 
 /* Text uses a contrast-safe semantic foreground while action fills retain the selected accent. */
 .text-accent {
-  color: rgb(var(--content-accent-rgb) / var(--tw-text-opacity, 1)) !important;
+  color: rgb(var(--primary-rgb) / var(--tw-text-opacity, 1)) !important;
 }
 
 /*
@@ -1430,11 +1259,11 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   sit on the same ground as the rows above and below it.
 */
 .mesh-pinned-message-bar {
-  background-color: rgb(var(--status-warning-rgb) / 0.045);
+  background-color: rgb(var(--marker-rgb) / 0.045);
 }
 
 .mesh-pinned-message-bar:hover {
-  background-color: rgb(var(--status-warning-rgb) / 0.08);
+  background-color: rgb(var(--marker-rgb) / 0.08);
 }
 
 /*
@@ -1444,8 +1273,8 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 */
 .mesh-accent-option[data-selected='true'] .mesh-accent-choice {
   box-shadow:
-    0 0 0 1px var(--accent),
-    0 0 0 3px rgb(var(--accent-rgb) / 0.28);
+    0 0 0 1px var(--primary),
+    0 0 0 3px rgb(var(--primary-rgb) / 0.28);
 }
 
 /*
@@ -1454,7 +1283,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   media receding into the canvas it is already on.
 */
 .mesh-media-scrim {
-  background: linear-gradient(transparent, rgb(var(--ref-quiet-canvas-rgb) / 0.85));
+  background: linear-gradient(transparent, rgb(var(--ref-n-4-rgb) / 0.85));
 }
 
 /*
@@ -1464,19 +1293,19 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   new vocabulary to read.
 */
 .mesh-participant-volume input[type='range'] {
-  height: var(--trust-rail-width);
+  height: 2px;
   appearance: none;
-  background: var(--surface-fill-hover);
-  border-radius: var(--radius-plane);
+  background: var(--surface-container-high);
+  border-radius: var(--shape-full);
 }
 
 .mesh-participant-volume input[type='range']::-webkit-slider-thumb {
-  width: var(--trust-rail-width);
+  width: 2px;
   height: 10px;
   appearance: none;
   border: 0;
-  border-radius: var(--radius-plane);
-  background: var(--accent);
+  border-radius: var(--shape-full);
+  background: var(--primary);
 }
 
 .mesh-participant-volume input[type='range']:focus-visible {
@@ -1485,15 +1314,15 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-trust-rail {
-  background-color: rgb(var(--status-success-rgb) / 0.5);
+  background-color: rgb(var(--primary-rgb) / 0.5);
 }
 
 .mesh-trust-rail[data-trust='remote'] {
-  background-color: rgb(var(--status-warning-rgb) / 0.5);
+  background-color: rgb(var(--marker-rgb) / 0.5);
 }
 
 .mesh-trust-rail[data-trust='suspect'] {
-  background-color: rgb(var(--status-danger-rgb) / 0.55);
+  background-color: rgb(var(--error-rgb) / 0.55);
 }
 
 /*
@@ -1501,23 +1330,23 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   peer and an absent peer must not read as two strengths of the same green.
 */
 .mesh-trust-rail[data-trust='idle'] {
-  background-color: var(--border-structural);
+  background-color: var(--outline-variant);
 }
 
 .mesh-state-tick {
-  background-color: var(--border-structural);
+  background-color: var(--outline-variant);
 }
 
 .mesh-state-tick[data-state='ok'] {
-  background-color: var(--status-success);
+  background-color: var(--primary);
 }
 
 .mesh-state-tick[data-state='warning'] {
-  background-color: var(--status-warning);
+  background-color: var(--marker);
 }
 
 .mesh-state-tick[data-state='danger'] {
-  background-color: var(--status-danger);
+  background-color: var(--error);
 }
 
 /*
@@ -1526,7 +1355,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   row by a pixel when federation state resolves after first paint.
 */
 .mesh-remote-mark {
-  box-shadow: 0 0 0 1px rgb(var(--status-warning-rgb) / 0.5);
+  box-shadow: 0 0 0 1px rgb(var(--marker-rgb) / 0.5);
 }
 
 .mesh-overlay-surface {
@@ -1542,7 +1371,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
  * setting was removed rather than given an effect nobody asked for.
  */
 .mesh-overlay-surface {
-  background-color: var(--surface-overlay);
+  background-color: var(--surface-container-high);
   backdrop-filter: none;
 }
 
@@ -1552,13 +1381,13 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-button {
-  border-radius: var(--mesh-radius-tile);
+  border-radius: var(--shape-lg);
 }
 
 /* Icon buttons share the button family's tile radius so adjacent icon and
  * text controls line up. Kept as an unlayered override, matching .mesh-button. */
 .mesh-icon-button {
-  border-radius: var(--mesh-radius-tile);
+  border-radius: var(--shape-lg);
 }
 
 /*
@@ -1580,8 +1409,8 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-input {
-  border-radius: var(--mesh-radius-tile);
-  background-color: var(--surface-base);
+  border-radius: var(--shape-lg);
+  background-color: var(--surface);
   box-shadow: none;
 }
 
@@ -1596,10 +1425,10 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
  */
 .mesh-modal-surface {
   overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--mesh-radius-shell);
-  background-color: var(--surface-base);
-  box-shadow: var(--elev-overlay);
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-lg);
+  background-color: var(--surface);
+  box-shadow: var(--elev-3);
 }
 
 .mesh-modal-title {
@@ -1617,7 +1446,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-modal-body {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   /* The gap under the title used to be `mt-4` in the JSX. Same 16px, one layer. */
   margin-top: 16px;
   padding: 20px;
@@ -1634,13 +1463,13 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-onboarding-root {
-  background-color: var(--surface-canvas);
+  background-color: var(--surface);
 }
 
 .mesh-onboarding-shell {
-  border-color: var(--border-strong);
-  background-color: var(--surface-base);
-  border-radius: var(--mesh-radius-shell);
+  border-color: var(--outline);
+  background-color: var(--surface);
+  border-radius: var(--shape-lg);
   box-shadow: none;
 }
 
@@ -1678,14 +1507,14 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
  * one place not to add to it.
  */
 .mesh-card {
-  border-radius: var(--mesh-radius-card);
+  border-radius: var(--shape-xl);
   box-shadow: none;
 }
 
 .mesh-service-card,
 .mesh-form-card,
 .mesh-inline-card {
-  border-radius: var(--mesh-radius-card);
+  border-radius: var(--shape-xl);
   background-color: transparent;
   box-shadow: none;
 }
@@ -1706,8 +1535,8 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-service-card:focus-within,
 .mesh-service-card:hover {
-  border-color: var(--accent-container-line);
-  background-color: var(--accent-container);
+  border-color: var(--primary-container-line);
+  background-color: var(--primary-container);
 }
 
 .mesh-profile-choice,
@@ -1722,7 +1551,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 /* Full-bleed social workspace: quiet chrome, vivid identity, media-first canvas. */
 .mesh-app-shell {
   padding: 0;
-  background: var(--surface-rail);
+  background: var(--surface-container-lowest);
 }
 
 .mesh-community-rail,
@@ -1733,13 +1562,13 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-community-rail {
   overflow-x: hidden;
-  border-right: var(--rule-width) solid var(--border-structural) !important;
-  background: var(--surface-rail);
+  border-right: 1px solid var(--outline-variant) !important;
+  background: var(--surface-container-lowest);
 }
 
 .mesh-home-row {
   min-height: 52px;
-  padding: var(--ledger-row-padding) var(--shell-conversation-padding);
+  padding: 8px 20px;
 }
 
 /*
@@ -1750,7 +1579,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 .mesh-home-feature {
   grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
-  padding: clamp(18px, 3vw, 32px) var(--shell-conversation-padding);
+  padding: clamp(18px, 3vw, 32px) 20px;
   background: transparent;
   transition: background-color var(--transition-fast);
 }
@@ -1762,9 +1591,9 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
   thing it takes you to.
 */
 .mesh-home-feature-title {
-  font-size: calc(var(--ref-size-50) * var(--text-scale));
+  font-size: calc(var(--ref-size-45) * var(--text-scale));
   line-height: 1;
-  letter-spacing: var(--letter-spacing-display);
+  letter-spacing: var(--type-track-display-lg);
 }
 .mesh-home-feature-index { grid-column: 1; }
 .mesh-home-feature-copy { grid-column: 1; }
@@ -1793,13 +1622,13 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-context-sidebar {
   overflow: hidden;
-  border-right: var(--rule-width) solid var(--border-structural) !important;
-  background: var(--surface-sidebar);
+  border-right: 1px solid var(--outline-variant) !important;
+  background: var(--surface-container-low);
 }
 
 .mesh-workspace-main {
   overflow: hidden;
-  background: var(--surface-canvas);
+  background: var(--surface);
 }
 
 /*
@@ -1819,25 +1648,25 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-rail-slot[data-rail-active='true'] {
-  box-shadow: inset var(--community-marker) 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 /* Unread without selection: a short stub at the same rail edge, never a dot alone. */
 .mesh-rail-unread {
   position: absolute;
   left: 0;
-  width: var(--community-marker);
-  height: var(--rail-unread-marker-height);
+  width: 3px;
+  height: 8px;
   border-radius: 0;
-  background: var(--content-primary);
+  background: var(--on-surface);
 }
 
 .mesh-user-panel {
   margin: 0;
   border: 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   border-radius: 0;
-  background: var(--surface-sidebar);
+  background: var(--surface-container-low);
 }
 
 .mesh-composer-shell {
@@ -1848,30 +1677,30 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 /*
   The composer's ground is the alpha-white fill, not a surface of its own, and
-  its boundary is --border-control rather than the structural hairline: the
+  its boundary is --outline rather than the structural hairline: the
   border is what conveys the shape of the control, so WCAG 1.4.11 asks 3:1 of
   it and the 1.19:1 pane rule would not do.
 */
 .mesh-composer {
-  border-color: var(--border-control);
-  background: var(--surface-fill);
-  border-radius: var(--radius-control);
+  border-color: var(--outline);
+  background: var(--surface-container);
+  border-radius: var(--shape-full);
   box-shadow: none;
 }
 
 .mesh-composer:focus-within {
-  border-color: var(--accent-container-line);
-  box-shadow: 0 0 0 2px var(--accent-container);
+  border-color: var(--primary-container-line);
+  box-shadow: 0 0 0 2px var(--primary-container);
 }
 
 .mesh-composer button[aria-label='Send message']:not(:disabled) {
-  color: var(--content-on-accent);
-  background: var(--accent);
+  color: var(--on-primary);
+  background: var(--primary);
 }
 
 .mesh-composer-formatting {
-  border-color: var(--border-subtle);
-  background: var(--surface-base);
+  border-color: var(--outline-variant);
+  background: var(--surface);
 }
 
 .mesh-community-rail,
@@ -1880,7 +1709,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-context-sidebar {
-  width: var(--mesh-context-sidebar-width, var(--shell-channel-width));
+  width: var(--mesh-context-sidebar-width, var(--shell-list-width));
 }
 
 .mesh-room-context-panel {
@@ -1901,7 +1730,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-community-header,
 .mesh-community-shortcuts {
-  background: var(--surface-sidebar);
+  background: var(--surface-container-low);
 }
 
 .mesh-settings-scroll {
@@ -1924,7 +1753,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 .mesh-accent-choice[data-accent-preview='sand'] {
-  --mesh-accent-preview: var(--ref-accent-9);
+  --mesh-accent-preview: var(--ref-accent-sand-9);
 }
 
 .mesh-accent-choice[data-accent-preview='ocean'] {
@@ -1967,7 +1796,7 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 }
 
 /*
-  No colour of its own: the brand mark inherits `--content-on-accent` from the
+  No colour of its own: the brand mark inherits `--on-primary` from the
   tile it sits in, so it follows the theme and the chosen accent. It used to
   name a reference-tier violet here, which the tile overrode at both call
   sites, so the declaration was a contract violation that never rendered.
@@ -1986,15 +1815,15 @@ html[data-reduce-motion='true'] a:focus-visible .mesh-pixel-avatar-default .mesh
 
 .mesh-pixel-brand {
   overflow: hidden;
-  border: 1px solid var(--accent-container-line);
-  border-radius: var(--mesh-radius-tile);
-  background-color: var(--accent);
-  color: var(--content-on-accent);
+  border: 1px solid var(--primary-container-line);
+  border-radius: var(--shape-lg);
+  background-color: var(--primary);
+  color: var(--on-primary);
   box-shadow: none;
 }
 
 .mesh-pixel-brand .mesh-pixel-mark {
-  color: var(--content-on-accent) !important;
+  color: var(--on-primary) !important;
 }
 
 .mesh-pixel-avatar-default:hover .mesh-pixel-mark,
@@ -2050,17 +1879,17 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .sequence-card {
   position: relative;
-  border: 1px solid var(--surface-container-line);
+  border: 1px solid var(--outline-variant);
   background: var(--surface-container);
-  color: var(--surface-on-container);
+  color: var(--on-surface);
 }
 
 .sequence-card[data-sequence-position='single'] {
-  border-radius: var(--radius-control);
+  border-radius: var(--shape-full);
 }
 
 .sequence-card[data-sequence-position='first'] {
-  border-radius: var(--radius-control) var(--radius-control) 0 0;
+  border-radius: var(--shape-full) var(--shape-full) 0 0;
 }
 
 .sequence-card[data-sequence-position='middle'] {
@@ -2070,16 +1899,16 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .sequence-card[data-sequence-position='last'] {
   border-top-width: 0;
-  border-radius: 0 0 var(--radius-control) var(--radius-control);
+  border-radius: 0 0 var(--shape-full) var(--shape-full);
 }
 
 .sequence-card:hover {
-  background: var(--surface-container-hover);
+  background: var(--surface-container-high);
 }
 
 .sequence-card:focus-within,
 .sequence-card[data-selected='true'] {
-  background: var(--surface-container-active);
+  background: var(--surface-container-highest);
 }
 
 .sequence-card:focus-within {
@@ -2158,7 +1987,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   height: clamp(260px, 38vh, var(--shell-media-max-height));
   max-height: var(--shell-media-max-height);
   object-position: center;
-  border-radius: var(--mesh-radius-card);
+  border-radius: var(--shape-xl);
   box-shadow: none;
 }
 
@@ -2168,54 +1997,16 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   display: none;
 }
 
-/*
-  The conversation header is the one place a screen title lives, and a 56px
-  title does not fit a 50px band. This variant is content-driven -- 22px above,
-  20px below -- while every other header in the product keeps the fixed band.
-
-  It carries `.mesh-conversation-header` too, so the shared ground and the
-  sticky-surface contract still apply to it. The fixed `height` that used to
-  sit on that class is gone: it was only ever needed by headers that already
-  ask for `h-conversation-header` at the call site, and here it would crush the
-  title it exists to hold.
-*/
-.mesh-conversation-title-header {
-  height: auto;
-  padding-block: var(--conversation-title-padding-top) var(--conversation-title-padding-bottom);
-  padding-inline: var(--shell-conversation-padding);
-}
-
-/*
-  A poster-scale room name is a luxury a short window cannot afford.
-
-  At 500px of height the conversation header was taking 112px of it and the
-  timeline collapsed to nothing -- the message feed was still in the tree and
-  measured zero. The title steps down to the section size and the block padding
-  halves, which gives the conversation back roughly 60px on exactly the
-  viewports that have none to spare.
-*/
-@media (max-height: 640px) {
-  .mesh-conversation-title-header {
-    padding-block: var(--conversation-title-padding-compact);
-  }
-
-  .mesh-conversation-title-header .mesh-room-title {
-    font-size: var(--font-size-section);
-    line-height: var(--line-height-solid);
-    letter-spacing: var(--letter-spacing-section);
-  }
-}
-
 .mesh-conversation-header,
 .mesh-route-header {
   min-height: var(--shell-header-height);
-  background: var(--surface-base);
+  background: var(--surface);
   box-shadow: none;
 }
 
 .mesh-route-tab[aria-selected='true'] {
   background: transparent;
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--primary);
 }
 
 .mesh-route-navigation [role='tablist'] {
@@ -2223,7 +2014,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-route-tab {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--outline-variant);
   border-radius: 0;
 }
 
@@ -2237,7 +2028,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-channel-item {
   min-height: var(--shell-channel-row-height);
-  border-radius: var(--radius-plane);
+  border-radius: var(--shape-full);
 }
 
 .mesh-dm-search-region,
@@ -2263,16 +2054,16 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   padding-left: 12px;
 }
 
-.mesh-dm-landing { background: var(--surface-base); }
+.mesh-dm-landing { background: var(--surface); }
 .mesh-dm-landing-inner { padding: clamp(20px, 3vw, 32px); }
 .mesh-dm-landing-header { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-.mesh-dm-landing-title { max-width: none; font-size: var(--font-size-lg); line-height: var(--line-height-28); letter-spacing: var(--letter-spacing-28); }
+.mesh-dm-landing-title { max-width: none; font-size: var(--type-headline-md); line-height: var(--type-line-headline-md); letter-spacing: var(--type-track-display-lg); }
 .mesh-dm-lead { grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; padding: 16px 12px; transition: background-color var(--transition-fast); }
-.mesh-dm-lead:hover { background: var(--surface-hover); }
+.mesh-dm-lead:hover { background: var(--surface-container-high); }
 .mesh-dm-lead:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .mesh-dm-lead-index { white-space: nowrap; }
 .mesh-dm-lead-copy { align-self: center; }
-.mesh-dm-lead-title { font-size: var(--font-size-title); line-height: var(--line-height-22); letter-spacing: var(--letter-spacing-22); }
+.mesh-dm-lead-title { font-size: var(--type-title-lg); line-height: var(--type-line-title-lg); letter-spacing: var(--type-track-title-md); }
 .mesh-dm-lead-action { align-self: center; }
 .mesh-dm-lead-time { justify-self: end; }
 .mesh-dm-landing-recent { margin-top: 16px; }
@@ -2287,7 +2078,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 @media (max-width: 639px) {
   .mesh-dm-landing-inner { padding: 20px 16px; }
   .mesh-dm-landing-header { grid-template-columns: minmax(0, 1fr); }
-  .mesh-dm-landing-title { font-size: var(--font-size-title); }
+  .mesh-dm-landing-title { font-size: var(--type-title-lg); }
   .mesh-dm-lead { grid-template-columns: auto minmax(0, 1fr); }
   .mesh-dm-lead-action { grid-column: 2; justify-self: start; }
   .mesh-dm-lead-time { display: none; }
@@ -2295,7 +2086,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-room-context-header {
-  background: var(--surface-base);
+  background: var(--surface);
 }
 
 .mesh-room-context-tabs {
@@ -2303,7 +2094,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   margin-bottom: 0;
   margin-left: 0;
   gap: 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   border-radius: 0;
   background: transparent;
   padding: 0 12px;
@@ -2316,7 +2107,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-room-context-tab[aria-selected='true'] {
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 
 .mesh-room-context-summary {
@@ -2343,8 +2134,8 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 #community-settings-summary > .grid {
   gap: 0;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
+  border-bottom: 1px solid var(--outline-variant);
 }
 
 #community-settings-summary > .grid > div {
@@ -2354,7 +2145,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 #community-settings-summary > .grid > div + div {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
 }
 
 #community-settings-overview > div {
@@ -2368,21 +2159,21 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-settings-content label:has(input[name='appearance-accent']:checked) {
-  border-color: var(--border-subtle);
-  box-shadow: inset 2px 0 0 var(--accent);
+  border-color: var(--outline-variant);
+  box-shadow: inset 2px 0 0 var(--primary);
 }
 
 @media (min-width: 640px) {
   #community-settings-summary > .grid > div + div {
     border-top: 0;
-    border-left: 1px solid var(--border-subtle);
+    border-left: 1px solid var(--outline-variant);
   }
 }
 
 .mesh-settings-content [role='tabpanel'] > section:not([hidden]) {
   border: 0;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
+  border-bottom: 1px solid var(--outline-variant);
   border-radius: 0;
   background: transparent;
   padding: clamp(16px, 3vw, 24px) 0;
@@ -2401,15 +2192,15 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   breaks the shell grid, so a selection plane can bleed past it.
 */
 .mesh-command-surface {
-  border-bottom: var(--rule-width) solid var(--border-structural);
-  border-radius: var(--radius-plane);
-  background: var(--surface-canvas);
+  border-bottom: 1px solid var(--outline-variant);
+  border-radius: var(--shape-full);
+  background: var(--surface);
   box-shadow: none;
   padding-inline: var(--command-band-padding);
 }
 
 .mesh-search-popover [role='option'] {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--outline-variant);
 }
 
 .mesh-reaction-picker {
@@ -2458,7 +2249,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   display: flex;
   align-items: center;
   padding-left: 10px;
-  color: var(--content-muted);
+  color: var(--on-surface-variant);
 }
 
 .mesh-command-combobox > label {
@@ -2481,11 +2272,11 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   border-radius: 0;
   background: transparent;
   padding: 4px 14px;
-  font-size: var(--font-size-section);
+  font-size: var(--type-headline-md);
   line-height: var(--line-height-solid);
-  letter-spacing: var(--letter-spacing-section);
+  letter-spacing: var(--type-track-display-lg);
   font-weight: var(--font-weight-semibold);
-  caret-color: var(--accent);
+  caret-color: var(--primary);
 }
 
 .mesh-command-combobox > [role='listbox'] {
@@ -2500,8 +2291,8 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-command-combobox [role='presentation'] {
-  font-family: var(--font-mono);
-  letter-spacing: var(--letter-spacing-eyebrow);
+  font-family: var(--font-code);
+  letter-spacing: var(--type-track-label-sm);
 }
 
 /*
@@ -2510,10 +2301,10 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   opening rather than as a list inside a box.
 */
 .mesh-command-combobox [role='option'] {
-  border-bottom: var(--rule-width) solid var(--border-row);
-  border-radius: var(--radius-plane);
+  border-bottom: 1px solid var(--outline-variant);
+  border-radius: var(--shape-full);
   margin-inline: calc(-1 * var(--command-band-padding));
-  padding: var(--ledger-row-padding) var(--command-band-padding);
+  padding: 8px var(--command-band-padding);
 }
 
 /* A ruled list ends with content, not with a rule that separates it from air. */
@@ -2558,12 +2349,12 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-invite-section + .mesh-invite-section {
   margin-top: 20px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   padding-top: 20px;
 }
 
 .mesh-dm-safety-header {
-  background: var(--surface-base);
+  background: var(--surface);
 }
 
 .mesh-dm-safety-body {
@@ -2601,8 +2392,8 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 
 .mesh-beta-badge {
   border-radius: 0;
-  font-family: var(--font-mono);
-  letter-spacing: var(--letter-spacing-eyebrow);
+  font-family: var(--font-code);
+  letter-spacing: var(--type-track-label-sm);
   text-transform: uppercase;
 }
 
@@ -2615,17 +2406,17 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-feedback-field {
-  border-radius: var(--mesh-radius-tile);
-  background: var(--surface-base);
+  border-radius: var(--shape-lg);
+  background: var(--surface);
 }
 
 .mesh-feedback-actions {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   padding-top: 16px;
 }
 
 .mesh-feedback-status {
-  font-family: var(--font-mono);
+  font-family: var(--font-code);
 }
 
 /*
@@ -2651,40 +2442,40 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
  */
 .mesh-notice-advisory,
 .mesh-notice-band {
-  --notice-line: var(--surface-container-line);
+  --notice-line: var(--outline-variant);
   --notice-fill: var(--surface-container);
-  --notice-content: var(--content-primary);
+  --notice-content: var(--on-surface);
   border-radius: 0;
 }
 
 [data-notice-tone='accent'] {
-  --notice-line: var(--accent-container-line);
-  --notice-fill: var(--accent-container);
-  --notice-content: var(--accent-on-container);
+  --notice-line: var(--primary-container-line);
+  --notice-fill: var(--primary-container);
+  --notice-content: var(--on-primary-container);
 }
 
 [data-notice-tone='success'] {
-  --notice-line: var(--success-container-line);
-  --notice-fill: var(--success-container);
-  --notice-content: var(--success-on-container);
+  --notice-line: var(--primary-container-line);
+  --notice-fill: var(--primary-container);
+  --notice-content: var(--on-primary-container);
 }
 
 [data-notice-tone='warning'] {
-  --notice-line: var(--warning-container-line);
-  --notice-fill: var(--warning-container);
-  --notice-content: var(--warning-on-container);
+  --notice-line: var(--marker-container-line);
+  --notice-fill: var(--marker-container);
+  --notice-content: var(--on-marker-container);
 }
 
 [data-notice-tone='danger'] {
-  --notice-line: var(--danger-container-line);
-  --notice-fill: var(--danger-container);
-  --notice-content: var(--danger-on-container);
+  --notice-line: var(--error-container-line);
+  --notice-fill: var(--error-container);
+  --notice-content: var(--on-error-container);
 }
 
 [data-notice-tone='info'] {
-  --notice-line: var(--info-container-line);
-  --notice-fill: var(--info-container);
-  --notice-content: var(--info-on-container);
+  --notice-line: var(--primary-container-line);
+  --notice-fill: var(--primary-container);
+  --notice-content: var(--on-primary-container);
 }
 
 .mesh-notice-advisory {
@@ -2739,7 +2530,7 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-error-details {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   border-radius: 0;
   background: transparent;
   padding-right: 0;
@@ -2747,10 +2538,10 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
 }
 
 .mesh-toast {
-  border-color: var(--border-strong);
-  border-radius: var(--mesh-radius-shell);
-  background: var(--surface-base);
-  box-shadow: var(--elev-overlay);
+  border-color: var(--outline);
+  border-radius: var(--shape-lg);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
 }
 
 .mesh-toast-icon {
@@ -2842,7 +2633,7 @@ html[data-reduce-motion='true'] .mesh-toast-progress {
 .mesh-async-rule {
   position: relative;
   overflow: hidden;
-  background: var(--border-subtle);
+  background: var(--outline-variant);
 }
 
 .mesh-async-rule::after {
@@ -2850,7 +2641,7 @@ html[data-reduce-motion='true'] .mesh-toast-progress {
   inset-block: 0;
   left: 0;
   width: 40%;
-  background: var(--accent);
+  background: var(--primary);
   content: '';
   animation: mesh-async-sweep var(--motion-dur-activity) var(--motion-ease-reposition) infinite;
 }
@@ -2910,16 +2701,16 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 }
 
 .mesh-modal-loading {
-  border-color: var(--border-strong);
-  border-radius: var(--mesh-radius-shell);
-  background: var(--surface-base);
-  box-shadow: var(--elev-overlay);
+  border-color: var(--outline);
+  border-radius: var(--shape-lg);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
   overflow: hidden;
 }
 
 .mesh-loading-title {
   display: block;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--outline-variant);
   padding: 18px 20px 12px;
 }
 
@@ -2928,7 +2719,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 }
 
 .mesh-loading-lines {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   margin-top: 16px;
   padding: 16px 20px 20px;
 }
@@ -2947,14 +2738,14 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 .mesh-advanced-actions,
 .mesh-advanced-privacy,
 .mesh-advanced-version {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
   padding-top: 12px;
 }
 
 .mesh-advanced-loading {
   border-radius: 0;
   background: transparent;
-  font-family: var(--font-mono);
+  font-family: var(--font-code);
 }
 
 .mesh-diagnostics-frame,
@@ -2990,24 +2781,24 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 }
 
 .mesh-diagnostics-section {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--outline-variant);
   padding: 16px 12px;
 }
 
 .mesh-diagnostics-section:first-child {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
 }
 
 .mesh-diagnostics-grid {
   gap: 0;
-  border-top: 1px solid var(--border-subtle);
-  border-left: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
+  border-left: 1px solid var(--outline-variant);
 }
 
 .mesh-diagnostics-cell {
   min-width: 0;
-  border-right: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--outline-variant);
+  border-bottom: 1px solid var(--outline-variant);
   border-radius: 0;
   background: transparent;
 }
@@ -3023,7 +2814,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 .mesh-diagnostics-disclosure,
 .mesh-diagnostics-download,
 .mesh-diagnostics-probe {
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--outline-variant);
 }
 
 .mesh-diagnostics-note,
@@ -3039,8 +2830,8 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 }
 
 .mesh-diagnostics-bundle {
-  border: 1px solid var(--border-subtle);
-  font-family: var(--font-mono);
+  border: 1px solid var(--outline-variant);
+  font-family: var(--font-code);
 }
 
 .mesh-security-frame {
@@ -3063,14 +2854,14 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 
 .mesh-security-content > section {
   border: 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--outline-variant);
   border-radius: 0;
   background: transparent;
   padding: 18px 12px;
 }
 
 .mesh-security-content > section:first-of-type {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
 }
 
 .mesh-security-disclosure,
@@ -3097,19 +2888,19 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 }
 
 .mesh-security-device-list {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--outline-variant);
 }
 
 .mesh-security-device-row {
   border: 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--outline-variant);
   border-radius: 0;
   background: transparent;
   padding: 12px 4px;
 }
 
 .mesh-security-device-row:has(button:focus-visible) {
-  background: var(--surface-hover);
+  background: var(--surface-container-high);
 }
 
 @media (max-width: 639px) {
@@ -3148,7 +2939,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 
 @media (min-width: 768px) {
   .mesh-invite-section:first-child {
-    border-right: 1px solid var(--border-subtle);
+    border-right: 1px solid var(--outline-variant);
     padding-right: 20px;
   }
 
@@ -3164,7 +2955,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   /* Keep all four desktop panes available without letting persisted maximum
      widths consume the conversation at standard laptop widths. */
   .mesh-context-sidebar {
-    width: min(var(--mesh-context-sidebar-width, var(--shell-channel-width)), var(--shell-channel-width));
+    width: min(var(--mesh-context-sidebar-width, var(--shell-list-width)), var(--shell-list-width));
   }
 
   .mesh-room-context-panel {
@@ -3188,7 +2979,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
     inset-block: 0;
     right: 0;
     z-index: 44;
-    box-shadow: var(--elev-overlay);
+    box-shadow: var(--elev-3);
   }
 
   .mesh-room-context-panel {
@@ -3224,7 +3015,7 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
     inset-block: 0;
     left: var(--shell-rail-width);
     z-index: 45;
-    width: min(var(--shell-channel-width), calc(100vw - var(--shell-rail-width)));
+    width: min(var(--shell-list-width), calc(100vw - var(--shell-rail-width)));
     box-shadow: none;
     transform: translateX(-110%);
     transition: transform var(--transition-normal);
@@ -3258,9 +3049,9 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--outline-variant);
     padding: 0 10px;
-    background: var(--bg-primary);
+    background: var(--surface);
   }
 
   .mesh-network-label {
@@ -3372,22 +3163,22 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   :root {
     --ref-size-11: 12px;
     --ref-size-12: 13px;
-    --ref-size-13: 14px;
+    --ref-size-14: 14px;
     --ref-size-14: 15px;
-    --ref-size-15: 16px;
-    --ref-size-18: 19px;
+    --ref-size-16: 16px;
+    --ref-size-16: 19px;
     --ref-size-22: 23px;
     --ref-size-28: 30px;
-    --line-height-11: calc(16px * var(--text-scale));
-    --line-height-14: calc(19px * var(--text-scale));
-    --line-height-15: calc(22px * var(--text-scale));
+    --type-line-label-sm: calc(16px * var(--text-scale));
+    --type-line-body-md: calc(19px * var(--text-scale));
+    --type-line-body-lg: calc(22px * var(--text-scale));
     --line-height-prose: calc(24px * var(--text-scale));
     --message-gutter: 72px;
     --settings-drawer-width: 480px;
     --route-surface-columns: 280px minmax(0, 1fr);
     --voice-tile-min-height: 220px;
     --shell-rail-width: 68px;
-    --shell-channel-width: 296px;
+    --shell-list-width: 296px;
     --shell-roster-width: 336px;
     --shell-header-height: 60px;
     --shell-composer-height: 56px;
@@ -3443,22 +3234,22 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   :root {
     --ref-size-11: 13px;
     --ref-size-12: 14px;
-    --ref-size-13: 15px;
+    --ref-size-14: 15px;
     --ref-size-14: 16px;
-    --ref-size-15: 17px;
-    --ref-size-18: 20px;
+    --ref-size-16: 17px;
+    --ref-size-16: 20px;
     --ref-size-22: 25px;
     --ref-size-28: 32px;
-    --line-height-11: calc(18px * var(--text-scale));
-    --line-height-14: calc(21px * var(--text-scale));
-    --line-height-15: calc(24px * var(--text-scale));
+    --type-line-label-sm: calc(18px * var(--text-scale));
+    --type-line-body-md: calc(21px * var(--text-scale));
+    --type-line-body-lg: calc(24px * var(--text-scale));
     --line-height-prose: calc(26px * var(--text-scale));
     --message-gutter: 80px;
     --settings-drawer-width: 560px;
     --route-surface-columns: 320px minmax(0, 1fr);
     --voice-tile-min-height: 260px;
     --shell-rail-width: 72px;
-    --shell-channel-width: 336px;
+    --shell-list-width: 336px;
     --shell-roster-width: 384px;
     --shell-header-height: 64px;
     --shell-composer-height: 60px;
