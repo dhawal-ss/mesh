@@ -2517,14 +2517,6 @@ a:focus-visible .mesh-pixel-avatar-default .mesh-pixel-mark {
   padding: 16px;
 }
 
-.mesh-dm-safety-status {
-  border-top: 0;
-  border-right: 0;
-  border-bottom: 0;
-  border-radius: 0;
-  background: transparent !important;
-}
-
 .mesh-beta-info {
   gap: 0;
 }
@@ -2885,11 +2877,6 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
   font-family: var(--font-code);
 }
 
-.mesh-diagnostics-frame {
-  padding-right: 0;
-  padding-left: 0;
-}
-
 .mesh-diagnostics-header,
 .mesh-diagnostics-toolbar {
   padding-right: 12px;
@@ -3008,14 +2995,6 @@ html[data-reduce-motion='true'] .mesh-async-rule::after {
 
 .mesh-security-device-list {
   border-top: 1px solid var(--outline-variant);
-}
-
-.mesh-security-device-row {
-  border: 0;
-  border-bottom: 1px solid var(--outline-variant);
-  border-radius: 0;
-  background: transparent;
-  padding: 12px 4px;
 }
 
 .mesh-security-device-row:has(button:focus-visible) {
