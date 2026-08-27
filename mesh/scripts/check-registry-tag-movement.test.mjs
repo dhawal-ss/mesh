@@ -47,7 +47,7 @@ test('rejects a moved tag without any checked-in mutation exception', async () =
 
 test('never authorizes publication from the permanent checked-in workflow', async () => {
   const { control, entries } = await fixture()
-  for (const ref of ['refs/heads/main', 'refs/heads/beta/production-readiness-2026-08']) {
+  for (const ref of ['refs/heads/main']) {
     const authorization = manualPublicationAuthorization({
       eventName: 'workflow_dispatch',
       repository: 'dhawal-ss/mesh',

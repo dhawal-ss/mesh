@@ -20,7 +20,7 @@
   },
   "signaturePolicy": {
     "issuer": "https://token.actions.githubusercontent.com",
-    "identityRegexp": "^https://github\\.com/dhawal-ss/mesh/\\.github/workflows/container-candidates\\.yml@refs/heads/(main|beta/production-readiness-2026-08)$",
+    "identityRegexp": "^https://github\\.com/dhawal-ss/mesh/\\.github/workflows/container-candidates\\.yml@refs/heads/main$",
     "maxPayloadBytes": 1048576,
     "maxSignatures": 16
   },

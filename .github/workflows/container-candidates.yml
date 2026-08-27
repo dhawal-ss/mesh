@@ -3,7 +3,7 @@ name: Mesh container candidates
 on:
   workflow_dispatch:
   push:
-    branches: [main, beta/production-readiness-2026-08]
+    branches: [main]
     paths:
       - .github/workflows/container-candidates.yml
       - mesh/infra/container-candidates/**
@@ -98,7 +98,7 @@ jobs:
           EXACT_IMAGE: ${{ steps.exact.outputs.image }}
         run: |
           cosign verify \
-            --certificate-identity-regexp='^https://github\.com/dhawal-ss/mesh/\.github/workflows/container-candidates\.yml@refs/heads/(main|beta/production-readiness-2026-08)$' \
+            --certificate-identity-regexp='^https://github\.com/dhawal-ss/mesh/\.github/workflows/container-candidates\.yml@refs/heads/main$' \
             --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
             --output=json \
             "$EXACT_IMAGE" > "candidate-${{ matrix.name }}-signature-raw.json"

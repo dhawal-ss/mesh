@@ -65,7 +65,7 @@ export function validateContainerCandidates({ policy, workflow, dockerfiles, pat
 
   for (const required of [
     'workflow_dispatch:',
-    'branches: [main, beta/production-readiness-2026-08]',
+    'branches: [main]',
     'verify:',
     'permissions:\n  contents: read',
     'persist-credentials: false',

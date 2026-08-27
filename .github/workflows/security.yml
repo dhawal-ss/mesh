@@ -336,7 +336,7 @@ jobs:
         shell: bash
         run: |
           cosign verify \
-            --certificate-identity-regexp='^https://github\.com/dhawal-ss/mesh/\.github/workflows/container-candidates\.yml@refs/heads/(main|beta/production-readiness-2026-08)$' \
+            --certificate-identity-regexp='^https://github\.com/dhawal-ss/mesh/\.github/workflows/container-candidates\.yml@refs/heads/main$' \
             --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
             --output=json \
             '${{ matrix.image }}' > r2-container-${{ matrix.name }}-mesh-signature-raw.json
